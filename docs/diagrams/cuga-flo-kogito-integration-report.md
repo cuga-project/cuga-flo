@@ -161,7 +161,7 @@ the call never returns.
 | `CugaFlo.java` | `backend/server/kogito/` | MCP client for all four control points, compiled into the service |
 | `FlowRedirect.java` | `backend/server/kogito/` | In-process hook redirect |
 | Scaffolding templates | `backend/server/kogito/pom.xml.template`, `application.properties.template` | Generated project |
-| `register_kogito_engine` | `backend/server/cuga_flo_mcp/bridge.py` | Registers `run_process`, injects `cugaMcpUrl` |
+| `register_kogito_engine` | `src/cuga_flo/mcp/bridge.py` | Registers `run_process`, injects `cugaMcpUrl` |
 | Engine dispatch | `cuga_flow/flow_config.py` | `elif "kogito"`, plus a raising `else` |
 | Build script | `scripts/build_kogito_app.sh` | App directory → runnable Quarkus service |
 | Demo app | `docs/examples/.../loan_approval_kogito/` | Config, both BPMN models, policies |

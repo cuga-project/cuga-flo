@@ -2,7 +2,7 @@
 #
 # Generate and build a Kogito/Quarkus service for a CUGA FLO app.
 #
-# An app is authored entirely under docs/examples/flow_agent_app_inline/<app-name>/:
+# An app is authored entirely under applications/<app-name>/:
 # config/ holds its yaml, the clean BPMN, and one or more *-kogito.bpmn models;
 # policies/ holds the markdown. This script turns that into a runnable Quarkus service
 # by combining the app's Kogito models with the shared CUGA FLO Kogito runtime
