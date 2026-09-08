@@ -15,8 +15,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.bpmn_parser import BPMNFlow, BPMNProcess
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent_state import FlowState
+from cuga_flo.engine.bpmn_parser import BPMNFlow, BPMNProcess
+from cuga_flo.engine.flow_agent_state import FlowState
 
 
 @dataclass

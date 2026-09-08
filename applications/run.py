@@ -12,7 +12,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_config import FlowConfig
+from cuga_flo.engine.flow_config import FlowConfig
 
 # Default input data per process
 DEFAULT_INPUTS = {

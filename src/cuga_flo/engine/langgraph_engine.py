@@ -24,14 +24,14 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 from loguru import logger
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.bpmn_parser import BPMNProcess
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent_state import FlowState
-from cuga.backend.cuga_graph.nodes.cuga_flow.hook_manager import (
+from cuga_flo.engine.bpmn_parser import BPMNProcess
+from cuga_flo.engine.flow_agent_state import FlowState
+from cuga_flo.engine.hook_manager import (
     Hook,
     HookAction,
     HookResult,
 )
-from cuga.backend.cuga_graph.nodes.cuga_flow.workflow_engine import (
+from cuga_flo.engine.workflow_engine import (
     ControlPointFlowKnowledge,
     WorkflowEngine,
 )
@@ -218,7 +218,7 @@ class LangGraphWorkflowEngine(WorkflowEngine):
             logger.info(f"  Removed node '{node_id}' and rewired {len(incoming)}×{len(outgoing)} flows")
 
         elif mod_type == "add_node":
-            from cuga.backend.cuga_graph.nodes.cuga_flow.bpmn_parser import BPMNElement, BPMNFlow
+            from cuga_flo.engine.bpmn_parser import BPMNElement, BPMNFlow
 
             node_id = spec["node_id"]
             instruction = spec.get("task_instruction", "")
@@ -500,7 +500,7 @@ class LangGraphWorkflowEngine(WorkflowEngine):
         state: FlowState,
         overlay: _ControlOverlay,
     ) -> str:
-        from cuga.backend.cuga_graph.nodes.cuga_flow.decision_agent import eval_condition
+        from cuga_flo.engine.decision_agent import eval_condition
 
         if len(flows) == 1:
             return flows[0].id

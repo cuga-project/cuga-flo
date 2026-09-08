@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_config import FlowConfig
+from cuga_flo.engine.flow_config import FlowConfig
 
 
 def _config(engine_type: str) -> FlowConfig:
@@ -24,16 +24,16 @@ def _dispatch(engine_type: str) -> MagicMock:
     """Run to_flow_agent() with everything but the engine branch stubbed; return the bridge."""
     bridge = MagicMock()
     with (
-        patch("cuga.backend.server.cuga_flo_mcp.bridge.MCPFlowBridge", return_value=bridge),
-        patch("cuga.backend.cuga_graph.nodes.cuga_flow.process_registry.ProcessRegistry"),
-        patch("cuga.backend.cuga_graph.nodes.cuga_flow.flow_config.FlowAgent"),
+        patch("cuga_flo.mcp.bridge.MCPFlowBridge", return_value=bridge),
+        patch("cuga_flo.engine.process_registry.ProcessRegistry"),
+        patch("cuga_flo.engine.flow_config.FlowAgent"),
     ):
         _config(engine_type).to_flow_agent()
     return bridge
 
 
 def test_kogito_builds_kogito_proxy():
-    with patch("cuga.backend.server.kogito.kogito_proxy.KogitoProxy") as proxy_cls:
+    with patch("cuga_flo.adapters.kogito.proxy.KogitoProxy") as proxy_cls:
         bridge = _dispatch("kogito")
 
     proxy_cls.assert_called_once()
@@ -44,7 +44,7 @@ def test_kogito_builds_kogito_proxy():
 
 
 def test_flowable_builds_flowable_proxy():
-    with patch("cuga.backend.server.flowable.flowable_proxy.FlowableProxy") as proxy_cls:
+    with patch("cuga_flo.adapters.flowable.proxy.FlowableProxy") as proxy_cls:
         bridge = _dispatch("flowable")
 
     proxy_cls.assert_called_once()
@@ -54,7 +54,7 @@ def test_flowable_builds_flowable_proxy():
 
 def test_langgraph_builds_langgraph_engine():
     with patch(
-        "cuga.backend.cuga_graph.nodes.cuga_flow.langgraph_engine.LangGraphWorkflowEngine"
+        "cuga_flo.engine.langgraph_engine.LangGraphWorkflowEngine"
     ) as engine_cls:
         bridge = _dispatch("langgraph")
 

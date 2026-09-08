@@ -12,8 +12,8 @@ import os
 
 from loguru import logger
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.bpmn_parser import BPMNParser, BPMNProcess
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_config import FlowConfig
+from cuga_flo.engine.bpmn_parser import BPMNParser, BPMNProcess
+from cuga_flo.engine.flow_config import FlowConfig
 
 
 @dataclass

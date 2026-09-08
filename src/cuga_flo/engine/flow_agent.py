@@ -25,15 +25,15 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 from loguru import logger
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.decision_agent import DecisionAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent_state import FlowState
-from cuga.backend.cuga_graph.nodes.cuga_flow.hook_manager import (
+from cuga_flo.engine.decision_agent import DecisionAgent
+from cuga_flo.engine.flow_agent_state import FlowState
+from cuga_flo.engine.hook_manager import (
     Hook,
     HookAction,
     HookResult,
 )
-from cuga.backend.cuga_graph.nodes.cuga_flow.task_agent import TaskAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.workflow_engine import ControlPointFlowKnowledge
+from cuga_flo.engine.task_agent import TaskAgent
+from cuga_flo.engine.workflow_engine import ControlPointFlowKnowledge
 from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
 
 tracker = ActivityTracker()
@@ -71,8 +71,8 @@ class FlowAgent:
         hooks: Optional[List[Hook]] = None,
         action_permissions: Optional[Dict[str, List[str]]] = None,
     ):
-        from cuga.backend.server.cuga_flo_mcp.bridge import MCPFlowBridge
-        from cuga.backend.cuga_graph.nodes.cuga_flow.langgraph_engine import LangGraphWorkflowEngine
+        from cuga_flo.mcp.bridge import MCPFlowBridge
+        from cuga_flo.engine.langgraph_engine import LangGraphWorkflowEngine
 
         _bridge_owned = bridge is None
         self.bridge: MCPFlowBridge = bridge or MCPFlowBridge()
@@ -474,7 +474,7 @@ Respond with {{}} if the message states none of them.
             Terminal FlowState after the process completes or halts.
         """
         import asyncio
-        from cuga.backend.cuga_graph.nodes.cuga_flow.bpmn_parser import BPMNProcess
+        from cuga_flo.engine.bpmn_parser import BPMNProcess
 
         initial_inputs: Dict[str, Any] = dict(self.initial_variables)
         if isinstance(input_data, str):

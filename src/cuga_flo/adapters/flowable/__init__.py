@@ -1,3 +1,3 @@
-from cuga.backend.server.flowable.flowable_proxy import FlowableProxy, FlowableError
+from cuga_flo.adapters.flowable.proxy import FlowableProxy, FlowableError
 
 __all__ = ["FlowableProxy", "FlowableError"]

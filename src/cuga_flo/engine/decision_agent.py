@@ -43,8 +43,8 @@ from loguru import logger
 
 from langgraph.graph import StateGraph, START, END
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent_state import FlowState
-from cuga.backend.cuga_graph.nodes.cuga_flow.bpmn_parser import BPMNFlow
+from cuga_flo.engine.flow_agent_state import FlowState
+from cuga_flo.engine.bpmn_parser import BPMNFlow
 from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
 from cuga.backend.llm.models import LLMManager
 

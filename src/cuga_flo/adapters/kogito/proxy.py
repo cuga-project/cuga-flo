@@ -30,16 +30,16 @@ Two differences from FlowableProxy that are structural, not oversights:
 
 Quick CLI (against a running Kogito service):
 
-    python -m cuga.backend.server.kogito.kogito_proxy ping
-    python -m cuga.backend.server.kogito.kogito_proxy start loan_approval
+    python -m cuga_flo.adapters.kogito.proxy ping
+    python -m cuga_flo.adapters.kogito.proxy start loan_approval
 
 `start` / `run` drive Kogito directly, with no CUGA FLO bridge behind them, so a
 CUGA-instrumented process fails at its first control point with "cugaMcpUrl process
 variable is not set". That is expected — use `cuga start flow_agent_inline <app>` to
 exercise those; the CLI here is for connectivity checks and uninstrumented processes.
-    python -m cuga.backend.server.kogito.kogito_proxy instances loan_approval
-    python -m cuga.backend.server.kogito.kogito_proxy run loan_approval
-    python -m cuga.backend.server.kogito.kogito_proxy result loan_approval <instance_id>
+    python -m cuga_flo.adapters.kogito.proxy instances loan_approval
+    python -m cuga_flo.adapters.kogito.proxy run loan_approval
+    python -m cuga_flo.adapters.kogito.proxy result loan_approval <instance_id>
 """
 
 from __future__ import annotations

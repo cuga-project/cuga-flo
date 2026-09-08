@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from loguru import logger
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent_state import FlowState
+from cuga_flo.engine.flow_agent_state import FlowState
 
 
 class HookType(Enum):

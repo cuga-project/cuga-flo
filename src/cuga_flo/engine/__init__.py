@@ -15,37 +15,37 @@ Key Components:
 - Flow State: Extended state management for process execution
 """
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent_state import (
+from cuga_flo.engine.flow_agent_state import (
     FlowState,
     GraphModification,
 )
-from cuga.backend.cuga_graph.nodes.cuga_flow.hook_manager import (
+from cuga_flo.engine.hook_manager import (
     Hook,
     HookType,
     HookAction,
     HookResult,
     HookManager,
 )
-from cuga.backend.cuga_graph.nodes.cuga_flow.bpmn_parser import (
+from cuga_flo.engine.bpmn_parser import (
     BPMNParser,
     BPMNProcess,
     BPMNElement,
     BPMNFlow,
 )
-from cuga.backend.cuga_graph.nodes.cuga_flow.decision_agent import DecisionAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.task_agent import TaskAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent import FlowAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_config import FlowConfig, load_flow_from_yaml
-from cuga.backend.cuga_graph.nodes.cuga_flow.process_registry import (
+from cuga_flo.engine.decision_agent import DecisionAgent
+from cuga_flo.engine.task_agent import TaskAgent
+from cuga_flo.engine.flow_agent import FlowAgent
+from cuga_flo.engine.flow_config import FlowConfig, load_flow_from_yaml
+from cuga_flo.engine.process_registry import (
     ProcessRegistry,
     ProcessDefinition,
 )
-from cuga.backend.cuga_graph.nodes.cuga_flow.workflow_engine import (
+from cuga_flo.engine.workflow_engine import (
     WorkflowEngine,
     ControlPointFlowKnowledge,
 )
-from cuga.backend.cuga_graph.nodes.cuga_flow.langgraph_engine import LangGraphWorkflowEngine
-from cuga.backend.server.cuga_flo_mcp import MCPFlowBridge
+from cuga_flo.engine.langgraph_engine import LangGraphWorkflowEngine
+from cuga_flo.mcp import MCPFlowBridge
 
 __all__ = [
     # State

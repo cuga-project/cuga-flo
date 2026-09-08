@@ -59,7 +59,7 @@ async def serve(app: str, port: int | None) -> None:
     sys.stdout.reconfigure(line_buffering=True)
     _echo_tracker_steps()
 
-    from cuga.backend.cuga_graph.nodes.cuga_flow.flow_config import FlowConfig
+    from cuga_flo.engine.flow_config import FlowConfig
 
     config_path = _find_config(app)
     print(f"config   {config_path}")

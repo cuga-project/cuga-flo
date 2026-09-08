@@ -23,11 +23,11 @@ from fastmcp.client.transports import FastMCPTransport
 from loguru import logger
 
 if TYPE_CHECKING:
-    from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent import FlowAgent
-    from cuga.backend.cuga_graph.nodes.cuga_flow.langgraph_engine import LangGraphWorkflowEngine
-    from cuga.backend.cuga_graph.nodes.cuga_flow.process_registry import ProcessRegistry
-    from cuga.backend.server.flowable.flowable_proxy import FlowableProxy
-    from cuga.backend.server.kogito.kogito_proxy import KogitoProxy
+    from cuga_flo.engine.flow_agent import FlowAgent
+    from cuga_flo.engine.langgraph_engine import LangGraphWorkflowEngine
+    from cuga_flo.engine.process_registry import ProcessRegistry
+    from cuga_flo.adapters.flowable.proxy import FlowableProxy
+    from cuga_flo.adapters.kogito.proxy import KogitoProxy
 
 
 class MCPFlowBridge:
@@ -120,7 +120,7 @@ class MCPFlowBridge:
           route_gateway(gateway_id, ctx) → str    (gateway routing)
           evaluate_hook(hook_id, ctx)    → dict   (hook evaluation)
         """
-        from cuga.backend.cuga_graph.nodes.cuga_flow.workflow_engine import ControlPointFlowKnowledge
+        from cuga_flo.engine.workflow_engine import ControlPointFlowKnowledge
 
         async def execute_task(task_id: str, ctx: dict) -> dict:
             """Execute an agentic task via FlowAgent."""
@@ -135,7 +135,7 @@ class MCPFlowBridge:
         async def evaluate_hook(hook_id: str, ctx: dict) -> dict:
             """Evaluate a hook via FlowAgent's hook evaluator, then realize the action via Flowable REST."""
             from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
-            from cuga.backend.cuga_graph.nodes.cuga_flow.hook_manager import HookAction, HookResult
+            from cuga_flo.engine.hook_manager import HookAction, HookResult
 
             ctx_obj = ControlPointFlowKnowledge.from_dict(ctx)
             hook = next((h for h in fa.hooks if h.id == hook_id), None)

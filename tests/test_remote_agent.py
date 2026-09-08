@@ -3,14 +3,14 @@ Checks for the remote-agent binding. No network: `fetch_agent_card` and
 `delegate_task_via_a2a_sdk` are patched, since everything here is about *our* wiring
 — key names, card caching, role metadata, failure routing.
 
-Run: uv run pytest src/cuga/backend/cuga_graph/nodes/cuga_flow/test_remote_agent.py
+Run: uv run pytest tests/test_remote_agent.py
 """
 
 import asyncio
 
 import pytest
 
-from cuga.backend.cuga_graph.nodes.cuga_flow import remote_agent as ra
+from cuga_flo.engine import remote_agent as ra
 
 
 class _FakeA2A:
@@ -81,7 +81,7 @@ def test_both_bindings_send_their_role(fake):
 def test_gateway_skips_condition_eval_when_consulting(fake):
     """A consulting gateway has no expression to evaluate, so node 1 is left out of the
     graph entirely and the decide agent asks the user instead."""
-    from cuga.backend.cuga_graph.nodes.cuga_flow.decision_agent import DecisionAgent
+    from cuga_flo.engine.decision_agent import DecisionAgent
 
     tool = ra.make_consultation_tool("agent0", _registry(), "gateway 'G'")
     consulting = DecisionAgent(gateway_id="G", policy="", condition="prose", consultation_tool=tool)
@@ -94,7 +94,7 @@ def test_gateway_skips_condition_eval_when_consulting(fake):
 
 def test_plain_gateway_still_evaluates_its_condition(fake):
     """The no-consultation path is unchanged from before remote agents existed."""
-    from cuga.backend.cuga_graph.nodes.cuga_flow.decision_agent import DecisionAgent
+    from cuga_flo.engine.decision_agent import DecisionAgent
 
     d = DecisionAgent(gateway_id="G", policy="", condition="${score} > 0.6")
     assert d._eval_condition_node({"process_variables": {"score": 0.75}})["condition_result"] == "TRUE"

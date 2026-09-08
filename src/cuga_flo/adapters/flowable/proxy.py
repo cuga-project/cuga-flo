@@ -16,23 +16,23 @@ instances, inspect definitions/instances/variables, and complete user tasks
 Quick CLI (after the container is up):
 
     # deploy a model
-    python -m cuga.backend.server.flowable.flowable_proxy deploy \
+    python -m cuga_flo.adapters.flowable.proxy deploy \
         ~/Downloads/Loan-Approval-Process.bpmn20.xml
 
     # list deployed process definitions
-    python -m cuga.backend.server.flowable.flowable_proxy definitions
+    python -m cuga_flo.adapters.flowable.proxy definitions
 
     # start an instance by definition key (key == the BPMN <process id>)
-    python -m cuga.backend.server.flowable.flowable_proxy start Process_1s3q83l
+    python -m cuga_flo.adapters.flowable.proxy start Process_1s3q83l
 
     # service 1: invoke a workflow and wait until Flowable finishes it
-    python -m cuga.backend.server.flowable.flowable_proxy run Process_1s3q83l
+    python -m cuga_flo.adapters.flowable.proxy run Process_1s3q83l
 
     # service 2: fetch the result of a completed instance
-    python -m cuga.backend.server.flowable.flowable_proxy result <instance_id>
+    python -m cuga_flo.adapters.flowable.proxy result <instance_id>
 
     # end-to-end demo against the Loan-Approval-Process model
-    python -m cuga.backend.server.flowable.flowable_proxy demo \
+    python -m cuga_flo.adapters.flowable.proxy demo \
         ~/Downloads/Loan-Approval-Process.bpmn20.xml
 """
 
@@ -345,7 +345,7 @@ class FlowableProxy:
         returns an empty activityId list (which happens when Flowable's script task
         is mid-execution and hasn't flushed its activityId to DB yet).
         """
-        from cuga.backend.cuga_graph.nodes.cuga_flow.hook_manager import HookAction
+        from cuga_flo.engine.hook_manager import HookAction
 
         action = result.action
 

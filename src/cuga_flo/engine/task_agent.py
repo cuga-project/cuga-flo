@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional, Callable
 from loguru import logger
 
 from cuga.sdk import CugaAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent_state import FlowState
+from cuga_flo.engine.flow_agent_state import FlowState
 from langchain_core.tools import BaseTool
 from langchain_core.language_models import BaseChatModel
 from langchain_core.callbacks import BaseCallbackHandler

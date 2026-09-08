@@ -10,15 +10,15 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 from loguru import logger
 
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent import FlowAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.decision_agent import DecisionAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.hook_manager import Hook, HookType, HookAction, HookResult
-from cuga.backend.cuga_graph.nodes.cuga_flow.task_agent import TaskAgent
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_agent_state import FlowState
+from cuga_flo.engine.flow_agent import FlowAgent
+from cuga_flo.engine.decision_agent import DecisionAgent
+from cuga_flo.engine.hook_manager import Hook, HookType, HookAction, HookResult
+from cuga_flo.engine.task_agent import TaskAgent
+from cuga_flo.engine.flow_agent_state import FlowState
 from cuga.sdk import CugaAgent
 
 # Locally-built agent kinds. Anything else in agent_type: must name a remote_agents: key.
-# Mirrors AgentType in docs/examples/flow_agent_app_inline/schemas/app_yaml_schema.py.
+# Mirrors AgentType in src/cuga_flo/engine/app_yaml_schema.py.
 _BUILTIN_AGENT_TYPES = {"cuga_agent", "claude_agent", "langgraph", "crewAI", "wxo"}
 
 
@@ -27,7 +27,7 @@ class FlowConfig:
     Configuration for FlowAgent loaded from YAML.
 
     For the authoritative YAML schema see:
-    docs/examples/flow_agent_app_inline/schemas/app_yaml_schema.py
+    src/cuga_flo/engine/app_yaml_schema.py
     """
 
     def __init__(self, config_dict: Dict[str, Any], config_file_dir: Optional[str] = None):
@@ -53,7 +53,7 @@ class FlowConfig:
         # remote_agents: name -> {url, protocol, timeout, auth}. Referenced by name from
         # tasks[].agent.agent_type (delegation) and from human_consultation: on gateways
         # and hooks (tool binding).
-        from cuga.backend.cuga_graph.nodes.cuga_flow.remote_agent import RemoteAgentRegistry
+        from cuga_flo.engine.remote_agent import RemoteAgentRegistry
 
         self.remote_agents = RemoteAgentRegistry(config_dict.get("remote_agents", {}))
         self._validate_remote_agent_names()
@@ -105,7 +105,7 @@ class FlowConfig:
 
     def consultation_tool(self, name: str, owner: str) -> Any:
         """Build the consult_user tool that binds a remote agent to a reasoning agent."""
-        from cuga.backend.cuga_graph.nodes.cuga_flow.remote_agent import make_consultation_tool
+        from cuga_flo.engine.remote_agent import make_consultation_tool
 
         return make_consultation_tool(name, self.remote_agents, owner)
 
@@ -267,7 +267,7 @@ class FlowConfig:
             # per-task handler would otherwise swallow it into a silently agent-less task.
             agent_type = agent_config.get("agent_type") or "cuga_agent"
             if agent_type not in _BUILTIN_AGENT_TYPES:
-                from cuga.backend.cuga_graph.nodes.cuga_flow.remote_agent import RemoteTaskExecutor
+                from cuga_flo.engine.remote_agent import RemoteTaskExecutor
 
                 task_agents[task_id] = TaskAgent(
                     task_id=task_id,
@@ -537,7 +537,7 @@ class FlowConfig:
 
     def _create_condition_function(self, condition_str: str):
         """Create a condition function from string expression."""
-        from cuga.backend.cuga_graph.nodes.cuga_flow.decision_agent import eval_condition
+        from cuga_flo.engine.decision_agent import eval_condition
 
         def condition(state: FlowState) -> bool:
             return eval_condition(condition_str, state)
@@ -581,8 +581,8 @@ class FlowConfig:
                 "use load_flow_from_yaml() or FlowConfig.from_yaml()."
             )
 
-        from cuga.backend.cuga_graph.nodes.cuga_flow.process_registry import ProcessRegistry
-        from cuga.backend.server.cuga_flo_mcp.bridge import MCPFlowBridge
+        from cuga_flo.engine.process_registry import ProcessRegistry
+        from cuga_flo.mcp.bridge import MCPFlowBridge
 
         bridge = MCPFlowBridge(name="cuga-flo-bridge")
         registry = ProcessRegistry(bridge=bridge)
@@ -593,7 +593,7 @@ class FlowConfig:
         engine_type = engine_cfg.get("type", "langgraph") if isinstance(engine_cfg, dict) else "langgraph"
 
         if engine_type == "flowable":
-            from cuga.backend.server.flowable.flowable_proxy import FlowableProxy
+            from cuga_flo.adapters.flowable.proxy import FlowableProxy
 
             proxy = FlowableProxy(
                 base_url=engine_cfg.get("url"),
@@ -607,7 +607,7 @@ class FlowConfig:
                 callback_port=engine_cfg.get("callback_port", 8090),
             )
         elif engine_type == "kogito":
-            from cuga.backend.server.kogito.kogito_proxy import KogitoProxy
+            from cuga_flo.adapters.kogito.proxy import KogitoProxy
 
             proxy = KogitoProxy(base_url=engine_cfg.get("url"))
             bridge.register_kogito_engine(
@@ -617,7 +617,7 @@ class FlowConfig:
                 callback_host=engine_cfg.get("callback_host", "host.docker.internal"),
             )
         elif engine_type == "langgraph":
-            from cuga.backend.cuga_graph.nodes.cuga_flow.langgraph_engine import LangGraphWorkflowEngine
+            from cuga_flo.engine.langgraph_engine import LangGraphWorkflowEngine
 
             LangGraphWorkflowEngine(bridge=bridge)
         else:
