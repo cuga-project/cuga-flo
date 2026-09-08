@@ -31,7 +31,9 @@ dev = ["pytest>=8", "pyflakes>=3", "ruff>=0.6"]
 cuga-flo = "cuga_flo.cli:app"
 
 [tool.uv.sources]
-cuga = { git = "https://github.com/cuga-project/cuga-agent.git", branch = "main" }
+# Pinned to the ref the vendored patches/ are verified against. Bump this and
+# re-run `cuga-flo patch-host` together (git apply --3way tolerates most drift).
+cuga = { git = "https://github.com/cuga-project/cuga-agent.git", rev = "fbb9f1855894fc42cf5f2262a6878cab0cb2a377" }
 
 [build-system]
 requires = ["setuptools>=68"]

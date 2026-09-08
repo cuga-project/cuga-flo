@@ -71,7 +71,7 @@ cuga-flo/
   scripts/
     build_kogito_app.sh  serve_flow.py    # paths repointed to applications/
   patches/                   # vendored cuga-agent diffs + applier metadata
-    01-supervisor-delegation-flowagent.patch  02-…  03-…  05-code-executor-timeout.patch  06-llm-http-client-timeout.patch
+    01-supervisor-delegation-flowagent.patch  02-…  03-…  06-llm-http-client-timeout.patch
   docs/
     README-FLOWABLE.md  README-KOGITO.md  kogito-to-CUGA-FLO.md
     model_transform_knowledge/{flowable,kogito}/*.md   # ← BPMN-authoring know-hows (docs, not apps)
@@ -157,35 +157,33 @@ and the active engine registers `run_process`. LangGraph uses it in-process
 Do this **inside `git filter-repo`** with `--path-rename` for file moves, then a follow-up
 `sed`/`ruff --fix`-style commit for the `import` lines so history stays bisectable.
 
-## Vendored `cuga-agent` patches (`patches/`)
+## Vendored `cuga-agent` patches (`patches/`) — **4, as shipped**
 
-The 18 modified core files reduce to **6 patches**. Two of the "modified" files
-(`README.md`, `frontend/dist/*`, `uv.lock`, `.vscode`) are drift from merging `main` and are
-**not** carried.
-
-| # | Target file(s) in `cuga-agent` | What it does | Required? |
+| # | Target file in `cuga-agent` | What it does | Status |
 |---|---|---|---|
-| 01 | `cuga_graph/nodes/cuga_supervisor/delegation.py` | `create_agent_delegation_func` dispatches to `FlowAgent.invoke` (guarded `try/except` import — inert without cuga-flo) | **Required** for supervisor→FlowAgent delegation |
-| 02 | `supervisor_utils/supervisor_config.py` | handle `type: flow_agent` and accept `FlowAgent` from `import_from` | **Required** — every app's `supervisor*.yaml` uses `type: flow_agent` |
-| 03 | `cuga_graph/utils/agent_loop.py` | drain `Task: ` / `Gateway ` / `Hook ` tracker steps into the event stream | **Required** for the live trace in the Carbon UI |
-| 04 | `backend/server/manage_routes.py` | `GET`/`PATCH /flow/policies` — reads/writes the policy `.md` files next to an app's supervisor YAML | Optional — **orphan endpoint**: nothing in either repo's UI calls it. Carry it or drop it. |
-| 05 | `config.py` + `cuga_lite/executors/{code_executor,local/local_executor}.py` | `advanced_features.code_executor_timeout` (default 30→120, configurable) | Optional — needed if a task's generated code exceeds 30 s |
-| 06 | `backend/llm/models.py` | set `httpx.Timeout` on the OpenAI client so it can't hang | Optional — generic robustness |
+| 01 | `cuga_graph/nodes/cuga_supervisor/delegation.py` | `create_agent_delegation_func` dispatches to `FlowAgent.invoke` (guarded `try/except` import of `cuga_flo.engine.flow_agent` — inert without cuga-flo) | **shipped** — required for supervisor→FlowAgent delegation |
+| 02 | `supervisor_utils/supervisor_config.py` | handle `type: flow_agent` (imports `cuga_flo.engine.flow_config.load_flow_from_yaml`) and accept `FlowAgent` from `import_from` | **shipped** — every app's `supervisor*.yaml` uses `type: flow_agent` |
+| 03 | `cuga_graph/utils/agent_loop.py` | drain `Task: ` / `Gateway ` / `Hook ` tracker steps into the event stream | **shipped** — the live trace in the Carbon UI |
+| 06 | `backend/llm/models.py` | set `httpx.Timeout` on the OpenAI client so it can't hang | **shipped** — generic robustness |
+| ~~04~~ | `backend/server/manage_routes.py` — `/flow/policies` | dropped: orphan endpoint, no caller | — |
+| ~~05~~ | `config.py` + `cuga_lite` executors — code-exec timeout | **dropped: superseded upstream.** current `cuga-agent` main already has `settings.advanced_features.sandbox_execution_timeout` doing the same thing; the old patch now conflicts | — |
 
-`a2a-sdk<1.0`: expressed in cuga-flo's own `pyproject.toml`, **no host patch**.
+Patches 01/02 have their `cuga.backend.cuga_graph.nodes.cuga_flow.*` imports repointed to
+`cuga_flo.engine.*`. `a2a-sdk<1.0` is a cuga-flo `pyproject.toml` constraint, not a host patch.
 
-### Applier
+### Applier — `src/cuga_flo/_hostpatch.py` + `cuga-flo patch-host [--check|--revert]`
 
-`src/cuga_flo/_hostpatch.py` + console entry `cuga-flo patch-host [--check] [--revert]`:
-
-- Locates the installed package via `importlib.util.find_spec("cuga")`.
-- Applies each `.patch` with `patch -p1 --forward --fuzz=3`; writes a marker
-  `<cuga_pkg_dir>/.cuga_flo_hostpatch.json` recording `cuga-agent` version + per-patch sha.
-- Idempotent: re-run is a no-op when the marker matches; `--check` exits non-zero if any
-  patch is missing or the `cuga-agent` version changed since patching.
-- `cuga-flo start` and a new `cuga-flo doctor` call `--check` first and refuse to start with
-  a clear message ("run `cuga-flo patch-host`") rather than failing deep in supervisor load.
-- Works on an editable `cuga-agent` checkout too (warns that it mutates the source tree).
+- Locates the installed `cuga` via `find_spec`; walks up for a `.git` to tell **editable
+  checkout** (the normal dev case) from **wheel**.
+- **Editable:** `git checkout HEAD -- <4 target files>` then re-apply all with
+  `git apply --3way` — fully idempotent and drift-tolerant (the `--3way` merge re-bases each
+  hunk onto current context; only a genuine conflict in the flow region fails). **Wheel:**
+  `patch -p2 --forward --fuzz=3`.
+- Marker `<cuga_pkg_dir>/.cuga_flo_hostpatch.json` records `cuga-agent` version + per-patch
+  sha256. `--check` verifies the marker, the version, the sha set, and that each patch's
+  signature string is still present in the target file; exits non-zero otherwise.
+- `cuga-flo start` and `cuga-flo doctor` run `--check` first and refuse rather than failing
+  deep in supervisor load.
 
 ## The `cuga-flo` CLI
 
@@ -251,7 +249,7 @@ Also repoint the app-path strings: `applications/run.py` usage text, `build_kogi
 4. **Add packaging** — `pyproject.toml` (`name = "cuga-flo"`, `[project.scripts]`,
    `package-dir`, `package-data` for `*.java`/`*.template`/`*.bpmn`), `cuga` git dep pinned,
    `a2a-sdk<1.0`.
-5. **Add `patches/` + `_hostpatch.py` + `cuga-flo patch-host`/`doctor`.** Generate the 6
+5. **Add `patches/` + `_hostpatch.py` + `cuga-flo patch-host`/`doctor`.** Generate the 4
    patches with `git diff origin/main...cugaflo -- <file>` per row.
 6. **Add `src/cuga_flo/cli/`** — lift the `flow_agent_inline` block; app root → `applications/`.
 7. **Repoint scripts** — `build_kogito_app.sh` (`RUNTIME_DIR` → `src/cuga_flo/adapters/kogito/runtime/`,
@@ -260,43 +258,45 @@ Also repoint the app-path strings: `applications/run.py` usage text, `build_kogi
    `build/kogito/` + the `FLOWABLE_*` block; drop `docs/paper/`).
 9. **Verify** (below), then hand back for `git push`.
 
-## Verification
+## Verification — results
 
-```
-python -m venv .venv && source .venv/bin/activate
-pip install -e .                       # pulls cuga-agent from the pinned git ref
-cuga-flo patch-host && cuga-flo patch-host --check   # marker written, second run no-op
+Run against a fresh venv built from cuga-agent's `uv.lock` (`uv sync --frozen` in a
+`git worktree` at the pinned ref `fbb9f185`) + `uv pip install -e cuga-flo`.
 
-pytest tests/                          # test_remote_agent.py (9) + test_flow_config_engine_dispatch.py
+| Check | Result |
+|---|---|
+| `cuga-flo patch-host` — apply / `--check` / idempotent re-run / `--revert` | ✅ all pass (`git apply --3way`, 4 patches, clean against cuga-agent `0.3.0` @ `fbb9f185`) |
+| `import cuga_flo` + engine / mcp / adapters / remote_agent | ✅ resolve |
+| `pytest tests/` | ✅ **15 passed** |
+| `python applications/run.py receive_order` — headless, LangGraph engine | ✅ end-to-end: 3 task agents, parallel gateway join, `is_complete=True`, real LLM via MCPFlowBridge |
+| `python scripts/serve_flow.py receive_order` | ✅ boots, MCP HTTP on :8090 returns 200 to `tools/list` |
+| `cuga-flo start flow_agent_inline receive_order` | ✅ registry :8001 → 200; Carbon UI :7860 → 200 (`<title>CUGA</title>`), `/manage` → 200; supervisor compiled the FlowAgent from `cuga_flo.engine` via patch 02; **0 tracebacks** |
 
-python applications/run.py loan_approval                            # headless, langgraph engine
-cuga-flo start flow_agent_inline loan_approval                       # Carbon UI :8001 — submit an
-                                                                    # applicant, see Task/Gateway/Hook trace
-scripts/build_kogito_app.sh loan_approval_kogito                     # no missing-<bpmn2:property> warnings
-build/kogito/loan_approval_kogito/run.sh &                          # leave running
-cuga-flo start flow_agent_inline loan_approval_kogito                # Kogito engine path across the MCP bridge
-python scripts/serve_flow.py excel_flows_kogito                      # MCP endpoint; call start_process
+**Not run this session (environment, not port):**
 
-# Regression on the host: with cuga-flo NOT importable but patches applied,
-# `python -c "import cuga.backend.cuga_graph.nodes.cuga_supervisor.delegation"` still imports
-# (HAS_FLOW_AGENT=False), and cuga-agent's own `cuga start demo_supervisor` is unaffected.
-```
+- **Flowable engine** (`loan_approval`) — needs `flowable/flowable-ui` on :8080 (not running).
+- **Kogito engine** (`loan_approval_kogito`, `excel_flows_kogito`) — host has JDK 11/8 only;
+  Kogito/Quarkus codegen needs **JDK 17**. `scripts/build_kogito_app.sh` cannot run here.
+- Host regression (`cuga start demo_supervisor` with cuga-flo absent) — the seams are
+  `try/except`-guarded so `HAS_FLOW_AGENT=False` when cuga-flo is not importable; not
+  re-exercised.
 
 ## Critical files
 
-- New: `src/cuga_flo/cli/start.py`, `src/cuga_flo/_hostpatch.py`, `patches/0[1-6]-*.patch`,
-  `pyproject.toml`.
-- Moved-and-edited: `src/cuga_flo/engine/flow_config.py` (imports), `…/engine/remote_agent.py`
-  (keeps `cuga.backend…a2a_protocol` import), `…/mcp/bridge.py` (imports),
-  `scripts/build_kogito_app.sh`, `scripts/serve_flow.py`, `applications/run.py`.
-- Reference for the patch contents: `git diff origin/main...cugaflo --` per file in the
-  patch table.
+- New: `src/cuga_flo/cli/__init__.py` + `cli/start.py`, `src/cuga_flo/_hostpatch.py`,
+  `patches/0{1,2,3,6}-*.patch`, `pyproject.toml`, `.gitignore`, `.env.example`.
+- Moved-and-edited: `src/cuga_flo/engine/flow_config.py` (imports + schema-path comments),
+  `…/engine/remote_agent.py` (keeps `cuga.backend…a2a_protocol`), `…/mcp/bridge.py`,
+  `scripts/build_kogito_app.sh`, `scripts/serve_flow.py`, `applications/run.py`,
+  `README.md` (FLO expansion, logo path, module tree, `applications/` paths).
+- Patch contents: `git diff origin/main...cugaflo -- <file>`, then `git apply --3way`.
 
 ## Risks & open questions
 
-- **Patch drift.** `pip install -U cuga-agent` reverts host patches silently. Mitigation:
-  marker records the `cuga-agent` version; `cuga-flo start`/`doctor` refuse on mismatch.
-  Patches use `--fuzz=3`; if context has moved too far they need per-version variants.
+- **Patch drift.** `pip install -U cuga` reverts the host patches and bumps the version;
+  `cuga-flo start` / `doctor` run `patch-host --check` and refuse on a mismatch. `git apply
+  --3way` re-bases hunks onto new context, so a routine cuga-agent bump is just "re-run
+  `patch-host`"; only a genuine conflict in the flow region needs the patch itself updated.
 - **Patch 04 (`/flow/policies`).** No caller exists, so the leanest choice is to **drop it**
   from the initial split. If a consumer appears, the cleaner form is cuga-flo mounting its own
   `APIRouter` onto the running demo app rather than patching `manage_routes.py` (needs an
