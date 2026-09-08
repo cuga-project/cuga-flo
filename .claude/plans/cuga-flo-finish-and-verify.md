@@ -4,6 +4,22 @@ Runbook for the remaining work after the repo extraction. Written to be executed
 **fresh workspace opened at the new repo** (`cuga-project/cuga-flo`), so it assumes no
 memory of the extraction session.
 
+## Verification run — 2026-09-08
+
+Steps 2–5 executed and **passing**. Step 1 (push) still pending — the only open item.
+
+| step | result |
+|---|---|
+| 1 — push | **pending** — commit `a62e7e9` (Apache-2.0 LICENSE + NOTICE, carried from cuga-agent; extraction had dropped it) sits on top of `main`, tree clean. Remote `main` is still the GitHub seed (one "Initial commit", LICENSE only). Run `git push -u --force origin main`. |
+| 2 — LangGraph | pass. venv = cuga-agent `uv sync --frozen` @ `fbb9f185` + `uv pip install --no-deps -e .` for cuga-flo (no mcp/fastmcp conflict). `patch-host` 4/4 (git mode), `--check` exit 0, `pytest` 15 passed, `run.py receive_order` → `is_complete=True` (3 task agents, both parallel gateways, 1 hook). |
+| 3 — Flowable | pass. Needed a **fresh** `flowable/flowable-ui:latest` (the long-running container was wedged; the image is amd64 under emulation and slow → set `FLOWABLE_TIMEOUT=120` in `.env`, default 30 timed out mid-run). BPMN redeployed via the proxy. `run.py loan_approval` → `is_complete=True`, `decision:"give loan"`; both hooks + gateway `Gateway_09ad5fc` fired engine-driven over MCP `:8090`; Flowable history instance reached `Event_13axbio`. |
+| 4 — Kogito | pass. **JDK 17 was present** — Homebrew `openjdk@17` (keg-only, so invisible to `/usr/libexec/java_home`; the build script finds it by path). Build: no `missing <bpmn2:property>` warnings, `run.sh` produced. `run.py loan_approval_kogito` → `is_complete=True`, `credit_score:0.887`, `manager_informed:true`; full hook→task→gateway→hook callback chain; Kogito data-index instance `state:COMPLETED`. Post-run `asyncio.CancelledError` (uvicorn `:8090` lifespan teardown, after completion) is benign — same class as the atexit noise. |
+| 5 — host regression | pass. `HAS_FLOW_AGENT` = `False` (no ImportError) without cuga-flo, `True` with it. Stock `cuga start demo_supervisor` comparison not run (needs its own bring-up). |
+
+Not run: `excel_flows_kogito` / A2A (needs a reachable agent0). Terminal `gateway_decisions` /
+`hook_evaluations` come back `{}` on both external engines — those paths are engine-driven and
+only logged, not aggregated into the printed `FlowState`; not a regression.
+
 ## Where things stand
 
 - The repo already exists locally at whatever path this workspace is open on (the extraction
@@ -18,8 +34,8 @@ memory of the extraction session.
   - `python scripts/serve_flow.py receive_order` → MCP HTTP on `:8090` returns 200
   - `cuga-flo start flow_agent_inline receive_order` → Carbon UI `:7860` → 200, supervisor
     compiles the FlowAgent from `cuga_flo.engine` via the vendored patch
-- **Not yet verified** (needs tooling the extraction host lacked): the **Flowable** and
-  **Kogito** engine paths. That is the bulk of this runbook.
+- **Flowable** and **Kogito** engine paths — verified 2026-09-08 (see the run table above);
+  the steps below record how.
 
 ## Design facts the executor needs
 
@@ -40,8 +56,10 @@ memory of the extraction session.
 - LLM config comes from a `.env` in the repo root (copy from `.env.example`; the extraction
   host used an OpenAI-compatible gateway with `MODEL_NAME=claude-sonnet-4-6`). `.env` is
   gitignored — never commit it.
-- `git`, `git-filter-repo`, `uv`, `mvn` were present; **JDK was 11 (no 17)** — Kogito needs
-  17, so expect to install/point `JAVA_HOME` at a 17 JDK.
+- `git`, `git-filter-repo`, `uv`, `mvn` present. `/usr/libexec/java_home` shows only 8 & 11,
+  **but** Homebrew `openjdk@17` is installed keg-only at `/opt/homebrew/opt/openjdk@17` —
+  `build_kogito_app.sh` looks for it there by path, so no install was needed. If it is
+  genuinely absent: `brew install openjdk@17`, then `export JAVA_HOME=$(/opt/homebrew/opt/openjdk@17/...)`.
 
 ---
 
@@ -109,7 +127,11 @@ docker run --rm -d -p 8080:8080 --name flowable flowable/flowable-ui:latest
 FLOWABLE_BASE_URL=http://localhost:8080/flowable-ui/process-api
 FLOWABLE_USER=admin
 FLOWABLE_PASSWORD=test
+FLOWABLE_TIMEOUT=120   # the image is amd64 under emulation on Apple silicon; the 30s default times out mid-run
 ```
+
+Use a **fresh** container — a long-lived `flowable-ui` wedges (unresponsive, then per-request
+timeouts). `docker stop <old>` first if one holds `:8080`.
 
 ### Run
 
