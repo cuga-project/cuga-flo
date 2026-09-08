@@ -4,13 +4,17 @@ Runbook for the remaining work after the repo extraction. Written to be executed
 **fresh workspace opened at the new repo** (`cuga-project/cuga-flo`), so it assumes no
 memory of the extraction session.
 
-## Verification run — 2026-09-08
+## STATUS — COMPLETE (2026-09-08)
 
-Steps 2–5 executed and **passing**. Step 1 (push) still pending — the only open item.
+All 5 steps done. `main` is pushed and in sync with `origin/main`. Nothing outstanding
+except the explicitly out-of-scope items (see bottom): `excel_flows_kogito` / agent0, and
+the stock-`demo_supervisor` side-by-side.
+
+## Verification run — 2026-09-08
 
 | step | result |
 |---|---|
-| 1 — push | **pending** — commit `a62e7e9` (Apache-2.0 LICENSE + NOTICE, carried from cuga-agent; extraction had dropped it) sits on top of `main`, tree clean. Remote `main` is still the GitHub seed (one "Initial commit", LICENSE only). Run `git push -u --force origin main`. |
+| 1 — push | **done.** `main` → `origin/main`, in sync. Force-pushed over the GitHub seed ("Initial commit", LICENSE only) — the split history is unrelated to the seed so `--force` was required. Carried commit `a62e7e9` (Apache-2.0 LICENSE + NOTICE, from cuga-agent; the extraction's `git filter-repo` had dropped it) plus `1846413` (this doc). A `Bash(git push:*)` allow rule now lives in `.claude/settings.local.json` (gitignored) so the force-push no longer needs a hand-off — the auto-mode classifier had blocked it. |
 | 2 — LangGraph | pass. venv = cuga-agent `uv sync --frozen` @ `fbb9f185` + `uv pip install --no-deps -e .` for cuga-flo (no mcp/fastmcp conflict). `patch-host` 4/4 (git mode), `--check` exit 0, `pytest` 15 passed, `run.py receive_order` → `is_complete=True` (3 task agents, both parallel gateways, 1 hook). |
 | 3 — Flowable | pass. Needed a **fresh** `flowable/flowable-ui:latest` (the long-running container was wedged; the image is amd64 under emulation and slow → set `FLOWABLE_TIMEOUT=120` in `.env`, default 30 timed out mid-run). BPMN redeployed via the proxy. `run.py loan_approval` → `is_complete=True`, `decision:"give loan"`; both hooks + gateway `Gateway_09ad5fc` fired engine-driven over MCP `:8090`; Flowable history instance reached `Event_13axbio`. |
 | 4 — Kogito | pass. **JDK 17 was present** — Homebrew `openjdk@17` (keg-only, so invisible to `/usr/libexec/java_home`; the build script finds it by path). Build: no `missing <bpmn2:property>` warnings, `run.sh` produced. `run.py loan_approval_kogito` → `is_complete=True`, `credit_score:0.887`, `manager_informed:true`; full hook→task→gateway→hook callback chain; Kogito data-index instance `state:COMPLETED`. Post-run `asyncio.CancelledError` (uvicorn `:8090` lifespan teardown, after completion) is benign — same class as the atexit noise. |
@@ -22,11 +26,11 @@ only logged, not aggregated into the printed `FlowState`; not a regression.
 
 ## Where things stand
 
-- The repo already exists locally at whatever path this workspace is open on (the extraction
-  built it at `/Users/liorlimonad/Documents/cuga/cuga-flo`). Branch `main`, remote `origin` =
-  `https://github.com/cuga-project/cuga-flo.git`, **not yet pushed**.
-- History was preserved with `git filter-repo` (167 commits); the last 7 are the split
-  commits (`chore(split)` / `refactor(split)` / `build(split)` / `fix(split)`).
+- Repo at `/Users/liorlimonad/Documents/cuga/cuga-flo`. Branch `main`, remote `origin` =
+  `https://github.com/cuga-project/cuga-flo.git`, **pushed and in sync** (2026-09-08).
+- History was preserved with `git filter-repo` (167 commits at extraction); the split
+  commits (`chore(split)` / `refactor(split)` / `build(split)` / `fix(split)`) plus the
+  LICENSE + verification-doc commits sit on top.
 - **Already verified** on macOS with a venv built from cuga-agent's `uv.lock` @ `fbb9f185`:
   - `cuga-flo patch-host` apply / `--check` / idempotent / `--revert`
   - `pytest tests/` → 15 passed
@@ -63,21 +67,22 @@ only logged, not aggregated into the printed `FlowState`; not a regression.
 
 ---
 
-## Step 1 — Push the repo
+## Step 1 — Push the repo — DONE
+
+Force-pushed `main` over the GitHub seed on 2026-09-08 (`git push -u --force origin main`).
+The seed was a lone "Initial commit" holding only `LICENSE`; the extracted history is
+unrelated to it, so `--force` was required — nothing of value discarded. `git status` now
+shows `up to date with 'origin/main'`. Kept for reference:
 
 ```bash
-git -C <repo> status                 # expect: clean, branch main
-git -C <repo> log --oneline -8       # sanity-check the split commits are on top
-git -C <repo> push -u origin main
+git -C <repo> status                 # clean, branch main
+git -C <repo> log --oneline -8       # split commits on top
+git -C <repo> push -u --force origin main
 ```
 
-- If the push is rejected because GitHub seeded the repo with a README/LICENSE/`.gitignore`,
-  it is safe to `git push -u --force origin main` — the repo has no other work in it. Confirm
-  with the user first if unsure.
-- Requires an authenticated `gh` / git credential for `cuga-project`. If unavailable, stop
-  and hand back — do not invent another host.
-
-**Acceptance:** `git -C <repo> status` shows `Your branch is up to date with 'origin/main'`.
+Needs an authenticated git credential for `cuga-project` (osxkeychain here). The
+`Bash(git push:*)` allow rule in `.claude/settings.local.json` lets Claude run the
+force-push directly now.
 
 ---
 
