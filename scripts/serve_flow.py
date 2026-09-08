@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-APPS = REPO / "docs" / "examples" / "flow_agent_app_inline"
+APPS = REPO / "applications"
 
 
 def _echo_tracker_steps() -> None:
@@ -93,7 +93,7 @@ async def serve(app: str, port: int | None) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("app", help="app dir name under flow_agent_app_inline, or a path")
+    ap.add_argument("app", help="app dir name under applications/, or a path")
     ap.add_argument("--port", type=int, default=None, help="override callback_port from the YAML")
     args = ap.parse_args()
     try:

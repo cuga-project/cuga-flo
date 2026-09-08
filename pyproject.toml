@@ -1,0 +1,55 @@
+[project]
+name = "cuga-flo"
+version = "0.1.0"
+description = "CUGA FLO (FLow Oversight) — a process harness for policy-aware, structurally-enforced agent workflows. BPMN control points are governed by CUGA agents; execution runs on a pluggable workflow engine over MCP."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10, <3.14"
+dependencies = [
+    # The reasoning agent and shared infrastructure. Not on PyPI yet — pinned to a
+    # git ref; bump the ref and re-run `cuga-flo patch-host` together (see patches/).
+    "cuga",
+    # <1.0: the 1.0 release moved a2a.types to protobuf. cuga_supervisor/a2a_protocol.py
+    # (which remote_agent.py drives) targets the 0.x pydantic API and swallows the
+    # ImportError into a boolean, so 1.0 silently disables A2A. Keep aligned with cuga-agent.
+    "a2a-sdk[http-server]>=0.3.22,<1.0",
+    "fastmcp>=3.2.0",
+    "langgraph",
+    "langchain-core>=1.2.22",
+    "pydantic>=2",
+    "pyyaml>=6.0.3",
+    "typer>=0.15.3",
+    "uvicorn",
+    "httpx",
+    "loguru",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyflakes>=3", "ruff>=0.6"]
+
+[project.scripts]
+cuga-flo = "cuga_flo.cli:app"
+
+[tool.uv.sources]
+cuga = { git = "https://github.com/cuga-project/cuga-agent.git", branch = "main" }
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"cuga_flo" = [
+    "engine/*.md",
+    "adapters/kogito/runtime/*.java",
+    "adapters/kogito/runtime/*.template",
+    "adapters/kogito/runtime/*.bpmn",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# venv
+.venv/
+venv/
+
+# env / secrets
+.env
+.secrets.*
+
+# Kogito / Quarkus build output
+/build/kogito/
+.quarkus/
+
+# tooling
+.DS_Store
+.idea/
+.claude/settings.json
+.claude/settings.local.json
+*.log
+logs/
+
+# PowerPoint lock files
+~$*

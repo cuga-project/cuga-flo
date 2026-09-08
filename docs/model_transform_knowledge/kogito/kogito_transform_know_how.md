@@ -44,7 +44,7 @@ removes machinery the Flowable procedure requires.
    `FlowRedirect` performs the jump from inside the calling script task.
 
 The runtime helpers the scripts call — `CugaFlo` and `FlowRedirect` — live in
-`src/cuga/backend/server/kogito/` and are copied into every generated service. They are
+`src/cuga_flo/adapters/kogito/runtime/` and are copied into every generated service. They are
 app-independent; nothing per-app needs writing in Java.
 
 ---
@@ -176,7 +176,7 @@ Then check, in order:
 
 1. Startup logs show `process id <your-process-id>` and no `Invalid process` error.
 2. `curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/<process_id>` → 200.
-3. A real run: `python docs/examples/flow_agent_app_inline/run.py <app-name>`.
+3. A real run: `python applications/run.py <app-name>`.
 4. The node trail: query `/graphql` for `ProcessInstances { state nodes { name } }` and
    confirm every control point appears and the state is `COMPLETED`.
 

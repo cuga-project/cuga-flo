@@ -7,7 +7,7 @@
 # policies/ holds the markdown. This script turns that into a runnable Quarkus service
 # by combining the app's Kogito models with the shared CUGA FLO Kogito runtime
 # (CugaFlo.java, FlowRedirect.java) and project scaffolding from
-# src/cuga/backend/server/kogito/.
+# src/cuga_flo/adapters/kogito/runtime/.
 #
 # The runtime Java is deliberately shared, not per-app: it is parameterised entirely
 # through the arguments the BPMN script tasks pass (task ids, hook ids, flow JSON), so
@@ -22,13 +22,13 @@
 #
 # Then:
 #   <out>/run.sh                                          # generated; pins JAVA_HOME
-#   python docs/examples/flow_agent_app_inline/run.py <app-name>
+#   python applications/run.py <app-name>
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUNTIME_DIR="$REPO_ROOT/src/cuga/backend/server/kogito"
-APPS_DIR="$REPO_ROOT/docs/examples/flow_agent_app_inline"
+RUNTIME_DIR="$REPO_ROOT/src/cuga_flo/adapters/kogito/runtime"
+APPS_DIR="$REPO_ROOT/applications"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -178,5 +178,5 @@ built. run it with:
 
 then, with the service up:
 
-  python docs/examples/flow_agent_app_inline/run.py $APP_NAME
+  python applications/run.py $APP_NAME
 EOF

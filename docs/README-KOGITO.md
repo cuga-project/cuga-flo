@@ -88,7 +88,7 @@ Registers `run_process`, starts the shared lazy uvicorn MCP listener, and inject
 
 ## App lifecycle
 
-An app is authored **entirely** under `docs/examples/flow_agent_app_inline/<app-name>/`:
+An app is authored **entirely** under `applications/<app-name>/`:
 
 ```
 <app-name>/
@@ -104,7 +104,7 @@ Then generate and build the service:
 ```bash
 scripts/build_kogito_app.sh <app-name>            # --port N, --out DIR, --clean, --no-build
 build/kogito/<app-name>/run.sh                    # generated; pins JAVA_HOME
-python docs/examples/flow_agent_app_inline/run.py <app-name>
+python applications/run.py <app-name>
 ```
 
 The script combines the app's `*-kogito.bpmn` with the shared runtime and the
@@ -119,7 +119,7 @@ from `--port`, else the app's `workflow_engine.url`, else 8081.
 
 The full transformation procedure — clean `BPMNdiagram.bpmn` to `*-kogito.bpmn`, element by
 element — is in
-`docs/examples/flow_agent_app_inline/model_transform_knowledge/kogito/`:
+`applications/model_transform_knowledge/kogito/`:
 
 | Know-how | Covers |
 |---|---|

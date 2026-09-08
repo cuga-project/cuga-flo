@@ -1,8 +1,8 @@
-<img src="../../../../../../docs/images/cugaflo-logo.png" alt="CUGA FLO" width="280"/>
+<img src="docs/images/cugaflo-logo.png" alt="CUGA FLO" width="280"/>
 
 # CUGA FLO
 
-**CUGA FLO (FLow Orchestration)** is a process harness for policy-aware, structurally-enforced agent workflows. The architecture separates deterministic process execution from agentic reasoning and governance. CUGA FLO enables the integration with any workflow engine via MCP. A demo instantiation with LangGraph is included, but this may be replaced with other workflow engines in production settings. LLM reasoning is scoped to designated control points — task fulfillment, gateway routing, and hook-governed flow adaptations.
+**CUGA FLO (FLow Oversight)** is a process harness for policy-aware, structurally-enforced agent workflows. The architecture separates deterministic process execution from agentic reasoning and governance. CUGA FLO enables the integration with any workflow engine via MCP. A demo instantiation with LangGraph is included, but this may be replaced with other workflow engines in production settings. LLM reasoning is scoped to designated control points — task fulfillment, gateway routing, and hook-governed flow adaptations.
 
 ---
 
@@ -183,7 +183,7 @@ Per-process `action_permissions` (declared in the YAML config) explicitly list w
 
 ### MCP Bridge
 
-`MCPFlowBridge` (`cuga_flo_mcp/bridge.py`) is a FastMCP server that acts as the integration contract between the FlowAgent harness and any `WorkflowEngine`. The two sides register independently:
+`MCPFlowBridge` (`cuga_flo/mcp/bridge.py`) is a FastMCP server that acts as the integration contract between the FlowAgent harness and any `WorkflowEngine`. The two sides register independently:
 
 **FlowAgent side** — registers reasoning tools:
 
@@ -255,7 +255,7 @@ A demo engine is included with CUGA FLO. At each control point it calls the corr
 
 ```python
 registry = ProcessRegistry()
-registry.register_from_directory("docs/examples/flow_agent_app_inline/")
+registry.register_from_directory("applications/")
 
 # Lookup returns (BPMNProcess, FlowConfig) — cached after first parse
 process, config = registry.get("loan_approval")
@@ -368,7 +368,7 @@ a remote agent must expose.
 
 ## Demo Apps
 
-Three inline demo processes are included under `docs/examples/flow_agent_app_inline/`, each illustrating a different combination of CUGA FLO capabilities:
+Three inline demo processes are included under `applications/`, each illustrating a different combination of CUGA FLO capabilities:
 
 | App | Description | Highlights |
 |---|---|---|
@@ -379,12 +379,12 @@ Three inline demo processes are included under `docs/examples/flow_agent_app_inl
 Start any demo with:
 
 ```bash
-cuga start flow_agent_inline <app_name>
+cuga-flo start flow_agent_inline <app_name>
 
 # Examples:
-cuga start flow_agent_inline loan_approval
-cuga start flow_agent_inline receive_order
-cuga start flow_agent_inline trip_planner
+cuga-flo start flow_agent_inline loan_approval
+cuga-flo start flow_agent_inline receive_order
+cuga-flo start flow_agent_inline trip_planner
 ```
 
 Each app directory follows the same layout: a BPMN file, a `flow_config.yaml` referencing it, agent definitions, and per-task/gateway policy markdown files under `policies/`.
@@ -394,20 +394,23 @@ Each app directory follows the same layout: a BPMN file, a `flow_config.yaml` re
 ## Module Structure
 
 ```
-cuga_flow/
-├── flow_agent.py          # FlowAgent — process harness meta-agent
-├── flow_agent_state.py    # FlowState — process-aware agent state
-├── flow_config.py         # FlowConfig — YAML-based instantiation
-├── bpmn_parser.py         # BPMN 2.0 XML parser → BPMNProcess
-├── task_agent.py          # TaskAgent — CugaAgent wrapper for task nodes
-├── decision_agent.py      # DecisionAgent — two-node gateway router
-├── hook_manager.py        # Hook, HookManager, HookAction, HookResult
-├── workflow_engine.py     # WorkflowEngine ABC + ControlPointContext
-├── langgraph_engine.py    # LangGraphWorkflowEngine — demo/current engine
-└── process_registry.py    # ProcessRegistry — multi-process catalog
-
-cuga_flo_mcp/
-└── bridge.py              # MCPFlowBridge — FastMCP integration contract
+src/cuga_flo/
+├── engine/
+│   ├── flow_agent.py          # FlowAgent — process harness meta-agent
+│   ├── flow_agent_state.py    # FlowState — process-aware agent state
+│   ├── flow_config.py         # FlowConfig — YAML-based instantiation
+│   ├── bpmn_parser.py         # BPMN 2.0 XML parser → BPMNProcess
+│   ├── task_agent.py          # TaskAgent — CugaAgent wrapper for task nodes
+│   ├── decision_agent.py      # DecisionAgent — two-node gateway router
+│   ├── hook_manager.py        # Hook, HookManager, HookAction, HookResult
+│   ├── remote_agent.py        # A2A delegation / consultation bindings
+│   ├── workflow_engine.py     # WorkflowEngine ABC + ControlPointContext
+│   ├── langgraph_engine.py    # LangGraphWorkflowEngine — demo/current engine
+│   └── process_registry.py    # ProcessRegistry — multi-process catalog
+├── mcp/bridge.py              # MCPFlowBridge — FastMCP integration contract
+├── adapters/flowable/proxy.py # Flowable REST client
+├── adapters/kogito/           # KogitoProxy + CugaFlo/FlowRedirect Java runtime
+└── cli/                       # `cuga-flo` command-line entry point
 ```
 
 ---
@@ -427,7 +430,7 @@ See **[README-FLOWABLE.md](README-FLOWABLE.md)** for the full description of:
 
 CUGA FLO also runs against **Apache KIE (Kogito)** as a third engine, selected with
 `workflow_engine: {type: kogito}`. Kogito compiles BPMN into a Quarkus service at build
-time, so apps are authored under `docs/examples/flow_agent_app_inline/<app-name>/` and
+time, so apps are authored under `applications/<app-name>/` and
 turned into a runnable service by `scripts/build_kogito_app.sh <app-name>`.
 
 The hook mechanism is simpler than Flowable's — one script task, no boundary event and no

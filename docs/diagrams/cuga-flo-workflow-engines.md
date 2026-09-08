@@ -115,4 +115,4 @@ the engine-specific BPMN model — `*.bpmn20.xml` for Flowable, `*-kogito.bpmn` 
 none for LangGraph, which compiles the clean model directly.
 
 See `README-FLOWABLE.md`, `README-KOGITO.md`, and the per-element procedures under
-`docs/examples/flow_agent_app_inline/model_transform_knowledge/`.
+`applications/model_transform_knowledge/`.

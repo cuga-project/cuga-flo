@@ -18,7 +18,7 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
         Note over App,Reg: STARTUP
-        App->>App: cuga start flow_agent_inline<br/>sets DYNACONF_SUPERVISOR__CONFIG_PATH
+        App->>App: cuga-flo start flow_agent_inline<br/>sets DYNACONF_SUPERVISOR__CONFIG_PATH
         App->>SC: load supervisor YAML
         SC->>SC: finds agent entry with type: flow_agent
         SC->>FC: load_flow_from_yaml(flow_config_path)
