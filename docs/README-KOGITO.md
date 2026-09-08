@@ -45,7 +45,7 @@ CONTINUE and the `complete_process` task id meaning TERMINATE.
 
 ## Components
 
-### `KogitoProxy` — `backend/server/kogito/kogito_proxy.py`
+### `KogitoProxy` — `src/cuga_flo/adapters/kogito/proxy.py`
 
 Sync `httpx` client over Kogito's generated per-process REST API. Mirrors `FlowableProxy`'s
 surface (`ping`, `start_process`, `get_variables`, `invoke_workflow`, `fetch_result`,
@@ -66,7 +66,7 @@ Confirmed REST contract:
 | `GET /{processId}` | Running instances only; `[]` once finished. |
 | `GET /{processId}/{id}` | 404 after completion — a bare Kogito service keeps no history. |
 
-### CUGA FLO Kogito runtime — `backend/server/kogito/*.java`
+### CUGA FLO Kogito runtime — `src/cuga_flo/adapters/kogito/runtime/*.java`
 
 Compiled **into** each generated service, shared across all apps because both classes are
 parameterised entirely through the arguments their BPMN script tasks pass:
@@ -108,7 +108,7 @@ python applications/run.py <app-name>
 ```
 
 The script combines the app's `*-kogito.bpmn` with the shared runtime and the
-`pom.xml` / `application.properties` templates from `backend/server/kogito/`. Port comes
+`pom.xml` / `application.properties` templates from `src/cuga_flo/adapters/kogito/runtime/`. Port comes
 from `--port`, else the app's `workflow_engine.url`, else 8081.
 
 `loan_approval_kogito` is the worked reference.

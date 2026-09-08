@@ -11,7 +11,7 @@ document covers what those classes provide and how each kind of control point is
 
 ## Part 1 — The runtime, compiled into the service
 
-Two classes live in `backend/server/kogito/` and are copied into every generated project by
+Two classes live in `src/cuga_flo/adapters/kogito/runtime/` and are copied into every generated project by
 `scripts/build_kogito_app.sh`. They are **app-independent**: everything specific to a process
 arrives as arguments from the BPMN, so no per-app Java is ever written.
 

@@ -157,10 +157,10 @@ the call never returns.
 
 | Component | Path | Role |
 |---|---|---|
-| `KogitoProxy` | `backend/server/kogito/kogito_proxy.py` | Sync httpx client over Kogito's generated REST API |
-| `CugaFlo.java` | `backend/server/kogito/` | MCP client for all four control points, compiled into the service |
-| `FlowRedirect.java` | `backend/server/kogito/` | In-process hook redirect |
-| Scaffolding templates | `backend/server/kogito/pom.xml.template`, `application.properties.template` | Generated project |
+| `KogitoProxy` | `src/cuga_flo/adapters/kogito/proxy.py` | Sync httpx client over Kogito's generated REST API |
+| `CugaFlo.java` | `src/cuga_flo/adapters/kogito/runtime/` | MCP client for all four control points, compiled into the service |
+| `FlowRedirect.java` | `src/cuga_flo/adapters/kogito/runtime/` | In-process hook redirect |
+| Scaffolding templates | `src/cuga_flo/adapters/kogito/runtime/pom.xml.template`, `application.properties.template` | Generated project |
 | `register_kogito_engine` | `src/cuga_flo/mcp/bridge.py` | Registers `run_process`, injects `cugaMcpUrl` |
 | Engine dispatch | `cuga_flow/flow_config.py` | `elif "kogito"`, plus a raising `else` |
 | Build script | `scripts/build_kogito_app.sh` | App directory → runnable Quarkus service |
@@ -190,7 +190,7 @@ Flowable's hook redirect works only because `Task_DynamicSkip` calls
 but is unused, because REST reads committed state and races the in-flight script task.
 
 Kogito's equivalent was unconfirmed and gated everything. A spike
-(`backend/server/kogito/redirectspike.bpmn`) resolved it in two lines:
+(`src/cuga_flo/adapters/kogito/runtime/redirectspike.bpmn`) resolved it in two lines:
 
 ```java
 ((NodeInstance) kcontext.getNodeInstance()).cancel();               // suppress nominal flow
