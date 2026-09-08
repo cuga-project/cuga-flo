@@ -50,7 +50,7 @@ configuration beyond a port binding.
 
 ## Component 1 — FlowableProxy
 
-`src/cuga/backend/server/flowable/flowable_proxy.py`
+`src/cuga_flo/adapters/flowable/proxy.py`
 
 A thin synchronous HTTP client over the Flowable UI REST API
 (`/flowable-ui/process-api`, basic auth). It handles the CUGA FLO side of the
@@ -85,9 +85,9 @@ routed execution.
 Quick CLI (against a running `flowable/flowable-ui:latest` container):
 
 ```bash
-python -m cuga.backend.server.flowable.flowable_proxy deploy path/to/model.bpmn20.xml
-python -m cuga.backend.server.flowable.flowable_proxy run    Process_1s3q83l
-python -m cuga.backend.server.flowable.flowable_proxy result <instance_id>
+python -m cuga_flo.adapters.flowable.proxy deploy path/to/model.bpmn20.xml
+python -m cuga_flo.adapters.flowable.proxy run    Process_1s3q83l
+python -m cuga_flo.adapters.flowable.proxy result <instance_id>
 ```
 
 ---
@@ -97,7 +97,7 @@ python -m cuga.backend.server.flowable.flowable_proxy result <instance_id>
 A legacy BPMN model cannot drive CUGA FLO out of the box. The process file deployed to
 Flowable must be extended with three types of control-point callbacks and a terminal
 callback. The transformation procedure is described in the know-how files under
-`applications/model_transform_knowledge/flowable/`; the loan approval
+`docs/model_transform_knowledge/flowable/`; the loan approval
 process (`applications/loan_approval/config/Loan-Approval-Process.bpmn20.xml`)
 is the reference implementation.
 
@@ -293,7 +293,7 @@ waiting on, builds the final `FlowState`, and returns it to the caller.
 
 The full procedure for transforming a legacy BPMN into a Flowable-ready model is documented
 in the know-how files at
-`applications/model_transform_knowledge/flowable/`:
+`docs/model_transform_knowledge/flowable/`:
 
 | Know-how | Covers |
 |---|---|

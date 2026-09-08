@@ -48,7 +48,7 @@ flow_agent = FlowAgent(
 Alternatively, load from a YAML config file:
 
 ```python
-from cuga.backend.cuga_graph.nodes.cuga_flow.flow_config import load_flow_from_yaml
+from cuga_flo.engine.flow_config import load_flow_from_yaml
 
 flow_agent = load_flow_from_yaml("config/process_config.yaml")
 ```
@@ -210,7 +210,7 @@ Per-process `action_permissions` (declared in the YAML config) explicitly list w
 Every MCP call carries a `ControlPointContext` — a dataclass embedding the full process state, execution history, model summary, and task instruction — so each reasoning call is self-contained and stateless from the engine's perspective.
 
 ```python
-from cuga.backend.server.cuga_flo_mcp.bridge import MCPFlowBridge
+from cuga_flo.mcp.bridge import MCPFlowBridge
 
 bridge = MCPFlowBridge()
 bridge.register_registry(registry)       # exposes register_flow, get_bpmn_process, get_flow_annotations
@@ -419,7 +419,7 @@ src/cuga_flo/
 
 CUGA FLO can run alongside **Flowable** as a pluggable external workflow engine, replacing the native LangGraph engine for BPMN process execution. In this mode Flowable owns process state, persistence, and token routing; CUGA FLO contributes LLM reasoning at each control point (task, gateway, hook) through the same MCP bridge interface.
 
-See **[README-FLOWABLE.md](README-FLOWABLE.md)** for the full description of:
+See **[README-FLOWABLE.md](docs/README-FLOWABLE.md)** for the full description of:
 
 - The two components that enable the integration: the **FlowableProxy** (REST client mediating communication with Flowable) and the **augmented BPMN model** (the Flowable-deployed process file extended with callbacks to CUGA FLO and hook-action handling)
 - The three BPMN extensions required for each control-point type: task agent (ScriptTask), decision agent (ScriptTask + adapted gateway), and hook (ScriptTask + boundary event + `Task_DynamicSkip`)
@@ -437,6 +437,6 @@ The hook mechanism is simpler than Flowable's — one script task, no boundary e
 shared `Task_DynamicSkip` — because Kogito rejects boundary events on script tasks and the
 script can perform the redirect itself.
 
-See **[README-KOGITO.md](README-KOGITO.md)** for the components (`KogitoProxy` plus the
+See **[README-KOGITO.md](docs/README-KOGITO.md)** for the components (`KogitoProxy` plus the
 `CugaFlo` / `FlowRedirect` Java runtime), the app lifecycle, the constraints on writing a
 Kogito model, and the known gaps.

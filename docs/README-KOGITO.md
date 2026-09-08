@@ -119,7 +119,7 @@ from `--port`, else the app's `workflow_engine.url`, else 8081.
 
 The full transformation procedure — clean `BPMNdiagram.bpmn` to `*-kogito.bpmn`, element by
 element — is in
-`applications/model_transform_knowledge/kogito/`:
+`docs/model_transform_knowledge/kogito/`:
 
 | Know-how | Covers |
 |---|---|
