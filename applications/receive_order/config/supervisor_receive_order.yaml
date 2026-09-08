@@ -1,6 +1,6 @@
 # Receive Order Supervisor Configuration (Inline)
 #
-# Used by: cuga start flow_agent_inline receive_order
+# Used by: cuga-flo start receive_order
 #
 # All agents are instantiated inline from YAML — no Python agent files required.
 # The FlowAgent is compiled from receive_order_config.yaml + BPMNdiagram.bpmn at startup.

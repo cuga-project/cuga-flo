@@ -35,7 +35,7 @@ Quick CLI (against a running Kogito service):
 
 `start` / `run` drive Kogito directly, with no CUGA FLO bridge behind them, so a
 CUGA-instrumented process fails at its first control point with "cugaMcpUrl process
-variable is not set". That is expected — use `cuga start flow_agent_inline <app>` to
+variable is not set". That is expected — use `cuga-flo start <app>` to
 exercise those; the CLI here is for connectivity checks and uninstrumented processes.
     python -m cuga_flo.adapters.kogito.proxy instances loan_approval
     python -m cuga_flo.adapters.kogito.proxy run loan_approval

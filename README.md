@@ -379,12 +379,12 @@ Three inline demo processes are included under `applications/`, each illustratin
 Start any demo with:
 
 ```bash
-cuga-flo start flow_agent_inline <app_name>
+cuga-flo start <app_name>
 
 # Examples:
-cuga-flo start flow_agent_inline loan_approval
-cuga-flo start flow_agent_inline receive_order
-cuga-flo start flow_agent_inline trip_planner
+cuga-flo start loan_approval
+cuga-flo start receive_order
+cuga-flo start trip_planner
 ```
 
 Each app directory follows the same layout: a BPMN file, a `flow_config.yaml` referencing it, agent definitions, and per-task/gateway policy markdown files under `policies/`.

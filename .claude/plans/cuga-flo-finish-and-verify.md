@@ -36,7 +36,7 @@ only logged, not aggregated into the printed `FlowState`; not a regression.
   - `pytest tests/` → 15 passed
   - `python applications/run.py receive_order` → full BPMN end-to-end on the **LangGraph** engine
   - `python scripts/serve_flow.py receive_order` → MCP HTTP on `:8090` returns 200
-  - `cuga-flo start flow_agent_inline receive_order` → Carbon UI `:7860` → 200, supervisor
+  - `cuga-flo start receive_order` → Carbon UI `:7860` → 200, supervisor
     compiles the FlowAgent from `cuga_flo.engine` via the vendored patch
 - **Flowable** and **Kogito** engine paths — verified 2026-09-08 (see the run table above);
   the steps below record how.

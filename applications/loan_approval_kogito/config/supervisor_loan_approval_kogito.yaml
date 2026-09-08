@@ -1,6 +1,6 @@
 # Loan Approval Supervisor Configuration — Apache KIE (Kogito) engine
 #
-# Used by: cuga start flow_agent_inline loan_approval_kogito
+# Used by: cuga-flo start loan_approval_kogito
 #
 # Identical in intent to loan_approval/config/supervisor_loan_approval.yaml — same process,
 # same policies, different execution engine. Only the referenced flow config differs.

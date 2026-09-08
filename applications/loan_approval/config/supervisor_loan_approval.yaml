@@ -1,6 +1,6 @@
 # Loan Approval Supervisor Configuration (Inline)
 #
-# Used by: cuga start flow_agent_inline
+# Used by: cuga-flo start loan_approval
 #
 # All agents are instantiated inline from YAML — no Python agent files required.
 # The FlowAgent is compiled from loan_approval_config.yaml + BPMNdiagram.bpmn at startup.

@@ -1,5 +1,5 @@
-"""`cuga-flo start flow_agent_inline <app>` — lifted from cuga-agent's
-`cuga start flow_agent_inline` block, repointed at `applications/`.
+"""`cuga-flo start <app>` — lifted from cuga-agent's `cuga start flow_agent_inline`
+block, repointed at `applications/`.
 
 The startup sequence is unchanged: enable the CugaSupervisor, publish a FlowAgent
 config into the config store, then start the registry + demo (Carbon UI) via
@@ -51,7 +51,7 @@ def run(process_name: Optional[str], host: str = "127.0.0.1", sandbox: bool = Fa
             chosen = available[0]
             logger.info(f"Defaulting to the only available application: '{chosen}'")
         else:
-            logger.error("Specify an application: cuga-flo start flow_agent_inline <app>")
+            logger.error("Specify an application: cuga-flo start <app>")
             logger.error(f"Available: {', '.join(available) if available else '(none found)'}")
             raise typer.Exit(1)
     elif process_name not in available:

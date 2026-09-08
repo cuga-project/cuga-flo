@@ -1,6 +1,6 @@
 # Trip Planner Supervisor Configuration (Inline)
 #
-# Used by: cuga start flow_agent_inline trip_planner
+# Used by: cuga-flo start trip_planner
 #
 # All agents are instantiated inline from YAML — no Python agent files required.
 # The FlowAgent is compiled from trip_planner_config.yaml + trip-planner.bpmn at startup.

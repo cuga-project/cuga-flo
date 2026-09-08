@@ -669,7 +669,7 @@ Consequences of that choice, worth being explicit about:
   ```bash
   ./scripts/build_kogito_app.sh excel_flows_kogito
   build/kogito/excel_flows_kogito/run.sh          # leave running
-  cuga start flow_agent_inline excel_flows_kogito # other terminal
+  cuga-flo start excel_flows_kogito               # other terminal
   ```
   Only step 1 repeats after a BPMN change — YAML and policies are read live.
 

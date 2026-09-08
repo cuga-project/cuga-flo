@@ -11,20 +11,21 @@ app = typer.Typer(help="CUGA FLO — process harness for policy-aware agent work
 
 @app.command()
 def start(
-    service: str = typer.Argument(..., help="Only 'flow_agent_inline' is supported."),
-    process_name: Optional[str] = typer.Argument(
-        None, help="Application under applications/ (e.g. loan_approval, loan_approval_kogito)."
+    app_name: Optional[str] = typer.Argument(
+        None,
+        help="Application under applications/ (e.g. loan_approval, loan_approval_kogito). "
+        "Defaults to the sole app if there is only one.",
     ),
     host: str = typer.Option("127.0.0.1", "--host", help="Host to bind (0.0.0.0 for external)."),
     sandbox: bool = typer.Option(False, "--sandbox", help="Enable remote sandbox mode."),
 ) -> None:
-    """Start an inline FlowAgent application with the CugaSupervisor and the Carbon UI."""
-    if service != "flow_agent_inline":
-        typer.echo(f"Unknown service '{service}'. Only 'flow_agent_inline' is supported.", err=True)
-        raise typer.Exit(1)
+    """Start a FlowAgent application with the CugaSupervisor and the Carbon UI."""
+    # ponytail: tolerate the retired `cuga-flo start flow_agent_inline <app>` form
+    if app_name == "flow_agent_inline":
+        app_name = None
     from cuga_flo.cli.start import run
 
-    run(process_name, host=host, sandbox=sandbox)
+    run(app_name, host=host, sandbox=sandbox)
 
 
 @app.command("patch-host")

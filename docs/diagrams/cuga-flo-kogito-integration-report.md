@@ -317,7 +317,7 @@ With the toolchain from §2 in place:
 ./scripts/build_kogito_app.sh <app-name>     # app dir -> build/kogito/<app-name>
 build/kogito/<app-name>/run.sh               # service on 8081
 source .venv/bin/activate
-cuga-flo start flow_agent_inline <app-name>      # then http://127.0.0.1:8001
+cuga-flo start <app-name>                    # then http://127.0.0.1:8001
 ```
 
 Only the build step repeats after a BPMN change; yaml and policies are read live.
