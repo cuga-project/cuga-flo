@@ -2,7 +2,7 @@
 
 # CUGA FLO
 
-**CUGA FLO (FLow Oversight)** is a process harness for policy-aware, structurally-enforced agent workflows. The architecture separates deterministic process execution from agentic reasoning and governance. CUGA FLO enables the integration with any workflow engine via MCP. A demo instantiation with LangGraph is included, but this may be replaced with other workflow engines in production settings. LLM reasoning is scoped to designated control points — task fulfillment, gateway routing, and hook-governed flow adaptations.
+**CUGA FLO (FLow Oversight)** is a process harness for policy-aware, structurally-enforced agent workflows. The architecture separates deterministic process execution from agentic reasoning and governance. CUGA FLO integrates with any workflow engine via MCP; three are currently supported — **LangGraph** (in-process), **Flowable**, and **Apache KIE (Kogito)** — selected per application, with any other engine pluggable through the same interface. LLM reasoning is scoped to designated control points — task fulfillment, gateway routing, and hook-governed flow adaptations.
 
 ---
 
@@ -16,7 +16,7 @@ Within that structure, three layers of policy-aware reasoning operate:
 - **DecisionAgent** reasons about gateway routing: given the condition evaluation result, the process state, and the gateway's policy, it selects which branch to follow.
 - **TaskAgent** fulfils individual tasks: it executes the task logic in accordance with the task's policy and writes results back into the shared process variable namespace.
 
-**MCP as the integration bridge.** The FlowAgent harness does not execute the BPMN process graph itself at runtime — a `WorkflowEngine` does. The two are decoupled by `MCPFlowBridge`, a FastMCP server that mediates all communication between them. The FlowAgent exposes reasoning tools (`execute_task`, `route_gateway`, `evaluate_hook`) over MCP; the ProcessRegistry exposes process metadata tools (`register_flow`, `get_bpmn_process`, `get_flow_annotations`); and the WorkflowEngine exposes `run_process`. All invocations — including the initial workflow trigger from FlowAgent — go through MCP tool calls, enabling future remote or cross-process transport. This makes the execution engine replaceable — the included LangGraph engine is the demo/current backend; enterprise-grade engines connect to the same MCP interface in production.
+**MCP as the integration bridge.** The FlowAgent harness does not execute the BPMN process graph itself at runtime — a `WorkflowEngine` does. The two are decoupled by `MCPFlowBridge`, a FastMCP server that mediates all communication between them. The FlowAgent exposes reasoning tools (`execute_task`, `route_gateway`, `evaluate_hook`) over MCP; the ProcessRegistry exposes process metadata tools (`register_flow`, `get_bpmn_process`, `get_flow_annotations`); and the WorkflowEngine exposes `run_process`. All invocations — including the initial workflow trigger from FlowAgent — go through MCP tool calls, enabling remote or cross-process transport. This makes the execution engine replaceable: LangGraph, Flowable, and Apache KIE (Kogito) each implement the same `WorkflowEngine` interface today, and any other engine — enterprise-grade or otherwise, with its own persistence, audit trails, and compliance guarantees — connects the same way, with no changes to the FlowAgent harness. See [WorkflowEngine](#workflowengine) below.
 
 This makes CUGA FLO suited for regulated, repeatable, or auditable processes — loan approvals, compliance workflows, onboarding pipelines — where the sequence of steps is structurally enforced but each step and permitted intervention is still governed by policy.
 
@@ -53,45 +53,7 @@ from cuga_flo.engine.flow_config import load_flow_from_yaml
 flow_agent = load_flow_from_yaml("config/process_config.yaml")
 ```
 
----
-
-### FlowAgent vs CugaSupervisor
-
-Both are top-level orchestrators exposing `invoke()`, and `FlowAgent` keeps that shape — but it
-deliberately drops the conversational machinery, because a BPMN process instance is a different
-unit of work from a chat thread.
-
-**Not carried over** — none of these appear in `FlowAgent`:
-
-| Capability | In `CugaSupervisor` | Why it is absent |
-|---|---|---|
-| Threading / multi-turn | `thread_id`, auto-generated per conversation | The process instance is the unit of identity; `FlowAgent` keys on `process_key`. |
-| Checkpointing | `MemorySaver`, `compile(checkpointer=…)` | State belongs to the engine — Flowable and Kogito persist it themselves. |
-| Resume / HITL | `invoke(message=None, action_response=…)`, `update_state({"hitl_response": …})` | No pause-and-resume. See the gap noted below. |
-| Dynamic agent registry | `add_agent()` / `remove_agent()`, graph rebuilt on next invoke | Task and gateway agents are fixed at construction from `FlowConfig`; the BPMN decides who runs where. |
-| A2A external agents | agents may be an A2A config dict | Only in-process `TaskAgent` / `DecisionAgent`. |
-| `variables_manager` | typed accessor over `supervisor_variables_manager` | Replaced by the flat `process_variables` dict, which is what engines exchange. |
-| Callbacks | `List[BaseCallbackHandler]` threaded into graph config | No pass-through; `ActivityTracker` is the only instrumentation. |
-| Step cap | `cuga_lite_max_steps` | The BPMN bounds execution structurally, so no runaway-loop guard is needed. |
-| OpenLit hooks | `init_openlit()`, `set_session_attribute(thread_id)` | Not called — see the gap noted below. |
-
-**The deepest difference is not in that table.** The supervisor node returns `Command(goto=…)`: an
-LLM chooses which agent runs next, which is why its state carries `available_agents` and
-`selected_agents`. `FlowAgent` never makes that choice — the engine does, and LLM reasoning is
-confined to task fulfilment, gateway routing, and hook adaptation. That is the CUGA FLO thesis
-rather than a reduction in capability.
-
-**Kept in altered form:** `invoke()` (returns a `FlowState`, not an `InvokeResult`), YAML
-construction (`FlowConfig.from_yaml` rather than `CugaSupervisor.from_yaml`), and per-agent
-policies — `special_instructions` survives on the lazily-created hook agent.
-
-**Two of these are genuine gaps rather than deliberate scoping:**
-
-- **Human-in-the-loop.** `HookResult` carries a `user_prompt` field and the hook prompt asks the
-  LLM for one, but nothing in `FlowAgent` can suspend and resume on a reply — so a hook cannot in
-  fact stop for a human. The field is currently inert.
-- **Observability.** Engine-driven runs never call `init_openlit()` or `set_session_attribute()`,
-  so they do not appear in OpenLit traces, which the supervisor path gets for free.
+See [FlowAgent vs CugaSupervisor](docs/flowagent-vs-cugasupervisor.md) for how it differs from a `CugaSupervisor`.
 
 ---
 
@@ -171,6 +133,8 @@ The `HookResult.action` determines what happens next:
 
 `REMOVE_NODE` and `ADD_NODE` trigger a **topology modification** and may only target nodes that have not yet executed. The engine is responsible for applying the structural change and resuming execution at the correct point without replaying already-executed nodes.
 
+> **Engine support varies.** This table is the full vocabulary the FlowAgent can emit, not a guarantee every engine honours all of it. Each action is realised through whatever the target engine's API exposes (or how far its internal execution model can be extended), so LangGraph, Flowable, and Kogito each support a different subset — the richer structural actions (`SWAP_NODES`, `REMOVE_NODE`, `ADD_NODE`) in particular. Constrain a process to what its engine actually supports via `action_permissions`.
+
 > **LangGraph note:** In the included LangGraph engine, `REMOVE_NODE` and `ADD_NODE` trigger a full graph recompile. The hook routes to `END`; the engine modifies the live `BPMNProcess` model, recompiles the graph, and resumes directly at the correct entry point — `new_node_id` for ADD_NODE, or the successor of the removed node for REMOVE_NODE — via a conditional `START` edge.
 
 Hook reasoning is performed by the **FlowAgent** itself — not a separate agent — because hooks are a process-level concern. The FlowAgent holds the full process state and BPMN structure, and reasons against the hook's policy to decide what flow adaptation (if any) is warranted. Hooks are the only points in the process where the FlowAgent is permitted to deviate from the nominal BPMN path, and every such deviation is policy-governed and recorded in the audit log.
@@ -241,9 +205,34 @@ async def _run_via_mcp(
     ...
 ```
 
-A demo engine is included with CUGA FLO. At each control point it calls the corresponding FlowAgent MCP tool with a `ControlPointContext`. Enterprise-grade workflow engines (with their own persistence, audit trails, and compliance guarantees) connect to the same `WorkflowEngine` interface and MCP bridge in production — no changes to the FlowAgent harness are required.
+At each control point, a `WorkflowEngine` calls the corresponding FlowAgent MCP tool with a `ControlPointContext`; any engine implementing the interface plugs in with no changes to the FlowAgent harness. Three currently do, selected per application via `workflow_engine: {type: ...}` in its config YAML. They differ in what each engine's own API exposes — and how far its execution model can be extended — to realize task, gateway, and hook control points, but the FlowAgent, the MCP bridge, and the YAML/policy authoring surface are identical across all three. See **[cuga-flo-workflow-engines.md](docs/diagrams/cuga-flo-workflow-engines.md)** for the architecture shared by all three.
 
-> **LangGraph note:** The included demo engine is `LangGraphWorkflowEngine` (`langgraph_engine.py`). It fetches the `BPMNProcess` via `get_bpmn_process` and engine-consumable config via `get_flow_annotations`, builds a `_ControlOverlay` of MCP-backed handlers, and compiles the BPMN topology into a `StateGraph` using `_build_graph` and `_add_edges_with_hooks`.
+---
+
+#### LangGraph
+
+`type: langgraph` — the in-process engine; no external service to run. `LangGraphWorkflowEngine` (`langgraph_engine.py`) fetches the `BPMNProcess` via `get_bpmn_process` and engine-consumable config via `get_flow_annotations`, builds a `_ControlOverlay` of MCP-backed handlers, and compiles the BPMN topology into a `StateGraph` (`_build_graph` / `_add_edges_with_hooks`). `REMOVE_NODE` and `ADD_NODE` trigger a full graph recompile: the hook routes to `END`, the engine updates the live `BPMNProcess` model, recompiles, and resumes directly at the correct entry point — `new_node_id` for `ADD_NODE`, or the successor of the removed node for `REMOVE_NODE` — via a conditional `START` edge.
+
+---
+
+#### Flowable
+
+`type: flowable` — runs alongside **Flowable** as an external workflow engine. Flowable owns process state, persistence, and token routing; CUGA FLO contributes LLM reasoning at each control point (task, gateway, hook) through the same MCP bridge interface.
+
+See **[README-FLOWABLE.md](docs/README-FLOWABLE.md)** for the full description of:
+
+- The two components that enable the integration: the **FlowableProxy** (REST client mediating communication with Flowable) and the **augmented BPMN model** (the Flowable-deployed process file extended with callbacks to CUGA FLO and hook-action handling)
+- The three BPMN extensions required for each control-point type: task agent (ScriptTask), decision agent (ScriptTask + adapted gateway), and hook (ScriptTask + boundary event + `Task_DynamicSkip`)
+
+---
+
+#### Apache KIE (Kogito)
+
+`type: kogito` — runs against **Apache KIE (Kogito)**. Kogito compiles BPMN into a Quarkus service at build time, so apps are authored under `applications/<app-name>/` and turned into a runnable service by `scripts/build_kogito_app.sh <app-name>`.
+
+The hook mechanism is simpler than Flowable's — one script task, no boundary event and no shared `Task_DynamicSkip` — because Kogito rejects boundary events on script tasks and the script can perform the redirect itself.
+
+See **[README-KOGITO.md](docs/README-KOGITO.md)** for the components (`KogitoProxy` plus the `CugaFlo` / `FlowRedirect` Java runtime), the app lifecycle, the constraints on writing a Kogito model, and the known gaps.
 
 ---
 
@@ -405,38 +394,10 @@ src/cuga_flo/
 │   ├── hook_manager.py        # Hook, HookManager, HookAction, HookResult
 │   ├── remote_agent.py        # A2A delegation / consultation bindings
 │   ├── workflow_engine.py     # WorkflowEngine ABC + ControlPointContext
-│   ├── langgraph_engine.py    # LangGraphWorkflowEngine — demo/current engine
+│   ├── langgraph_engine.py    # LangGraphWorkflowEngine — one of three engine adapters
 │   └── process_registry.py    # ProcessRegistry — multi-process catalog
 ├── mcp/bridge.py              # MCPFlowBridge — FastMCP integration contract
 ├── adapters/flowable/proxy.py # Flowable REST client
 ├── adapters/kogito/           # KogitoProxy + CugaFlo/FlowRedirect Java runtime
 └── cli/                       # `cuga-flo` command-line entry point
 ```
-
----
-
-## Integration with FLOWABLE
-
-CUGA FLO can run alongside **Flowable** as a pluggable external workflow engine, replacing the native LangGraph engine for BPMN process execution. In this mode Flowable owns process state, persistence, and token routing; CUGA FLO contributes LLM reasoning at each control point (task, gateway, hook) through the same MCP bridge interface.
-
-See **[README-FLOWABLE.md](docs/README-FLOWABLE.md)** for the full description of:
-
-- The two components that enable the integration: the **FlowableProxy** (REST client mediating communication with Flowable) and the **augmented BPMN model** (the Flowable-deployed process file extended with callbacks to CUGA FLO and hook-action handling)
-- The three BPMN extensions required for each control-point type: task agent (ScriptTask), decision agent (ScriptTask + adapted gateway), and hook (ScriptTask + boundary event + `Task_DynamicSkip`)
-
----
-
-## Integration with Apache KIE (Kogito)
-
-CUGA FLO also runs against **Apache KIE (Kogito)** as a third engine, selected with
-`workflow_engine: {type: kogito}`. Kogito compiles BPMN into a Quarkus service at build
-time, so apps are authored under `applications/<app-name>/` and
-turned into a runnable service by `scripts/build_kogito_app.sh <app-name>`.
-
-The hook mechanism is simpler than Flowable's — one script task, no boundary event and no
-shared `Task_DynamicSkip` — because Kogito rejects boundary events on script tasks and the
-script can perform the redirect itself.
-
-See **[README-KOGITO.md](docs/README-KOGITO.md)** for the components (`KogitoProxy` plus the
-`CugaFlo` / `FlowRedirect` Java runtime), the app lifecycle, the constraints on writing a
-Kogito model, and the known gaps.
