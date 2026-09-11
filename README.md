@@ -106,9 +106,7 @@ gateways:
 
 ### Hook
 
-Hooks are annotations over BPMN sequence flow edges. When execution reaches an annotated transition, CUGA FLO intercepts it and reasons — against the current process state and the hook's policy — about how execution should proceed before the target node is entered. Hooks are declared separately and attached to flows by ID.
-
-> **LangGraph note:** In the included LangGraph engine, hooks are materialised as intermediate graph nodes inserted at compile time between the source and target of each annotated edge. This is a technical choice specific to LangGraph's compiled graph model and is not part of the general hook contract.
+Hooks are annotations over BPMN sequence flow edges. When execution reaches an annotated transition, CUGA FLO intercepts it and reasons — against the current process state and the hook's policy — about how execution should proceed before the target node is entered. Hooks are declared separately and attached to flows by ID. How a hook is materialised at runtime is engine-specific — see each engine's doc under [WorkflowEngine](#workflowengine) below.
 
 Each hook carries:
 
@@ -133,9 +131,7 @@ The `HookResult.action` determines what happens next:
 
 `REMOVE_NODE` and `ADD_NODE` trigger a **topology modification** and may only target nodes that have not yet executed. The engine is responsible for applying the structural change and resuming execution at the correct point without replaying already-executed nodes.
 
-> **Engine support varies.** This table is the full vocabulary the FlowAgent can emit, not a guarantee every engine honours all of it. Each action is realised through whatever the target engine's API exposes (or how far its internal execution model can be extended), so LangGraph, Flowable, and Kogito each support a different subset — the richer structural actions (`SWAP_NODES`, `REMOVE_NODE`, `ADD_NODE`) in particular. Constrain a process to what its engine actually supports via `action_permissions`.
-
-> **LangGraph note:** In the included LangGraph engine, `REMOVE_NODE` and `ADD_NODE` trigger a full graph recompile. The hook routes to `END`; the engine modifies the live `BPMNProcess` model, recompiles the graph, and resumes directly at the correct entry point — `new_node_id` for ADD_NODE, or the successor of the removed node for REMOVE_NODE — via a conditional `START` edge.
+> **Engine support varies.** This table is the full vocabulary the FlowAgent can emit, not a guarantee every engine honours all of it. Each action is realised through whatever the target engine's API exposes (or how far its internal execution model can be extended), so LangGraph, Flowable, and Kogito each support a different subset — the richer structural actions (`SWAP_NODES`, `REMOVE_NODE`, `ADD_NODE`) in particular. Constrain a process to what its engine actually supports via `action_permissions`; see each engine's doc under [WorkflowEngine](#workflowengine) for exactly how it realises each action.
 
 Hook reasoning is performed by the **FlowAgent** itself — not a separate agent — because hooks are a process-level concern. The FlowAgent holds the full process state and BPMN structure, and reasons against the hook's policy to decide what flow adaptation (if any) is warranted. Hooks are the only points in the process where the FlowAgent is permitted to deviate from the nominal BPMN path, and every such deviation is policy-governed and recorded in the audit log.
 
@@ -185,9 +181,7 @@ bridge.register_engine(engine)           # exposes run_process
 client = bridge.get_client()
 ```
 
-A remote transport (HTTP/SSE) can be substituted without changing any FlowAgent or engine logic — enabling cross-process or cross-host deployment.
-
-> **LangGraph note:** The included LangGraph engine uses an in-process `FastMCPTransport` for the MCP connection.
+A remote transport (HTTP/SSE) can be substituted without changing any FlowAgent or engine logic — enabling cross-process or cross-host deployment. Which transport an engine actually uses is engine-specific — see each engine's doc under [WorkflowEngine](#workflowengine) below.
 
 ---
 
@@ -211,7 +205,12 @@ At each control point, a `WorkflowEngine` calls the corresponding FlowAgent MCP 
 
 #### LangGraph
 
-`type: langgraph` — the in-process engine; no external service to run. `LangGraphWorkflowEngine` (`langgraph_engine.py`) fetches the `BPMNProcess` via `get_bpmn_process` and engine-consumable config via `get_flow_annotations`, builds a `_ControlOverlay` of MCP-backed handlers, and compiles the BPMN topology into a `StateGraph` (`_build_graph` / `_add_edges_with_hooks`). `REMOVE_NODE` and `ADD_NODE` trigger a full graph recompile: the hook routes to `END`, the engine updates the live `BPMNProcess` model, recompiles, and resumes directly at the correct entry point — `new_node_id` for `ADD_NODE`, or the successor of the removed node for `REMOVE_NODE` — via a conditional `START` edge.
+`type: langgraph` (the default) — runs **in-process**, no external service. LangGraph owns the compiled process graph and its execution; CUGA FLO contributes LLM reasoning at each control point (task, gateway, hook) through the same MCP bridge interface.
+
+See **[README-LANGGRAPH.md](docs/README-LANGGRAPH.md)** for the full description of:
+
+- How `LangGraphWorkflowEngine` compiles a `BPMNProcess` into a LangGraph `StateGraph`, and how MCP-backed handlers are wired into each node
+- How the structural hook actions (`REMOVE_NODE`, `ADD_NODE`) are realised as a live graph recompile
 
 ---
 
@@ -228,11 +227,12 @@ See **[README-FLOWABLE.md](docs/README-FLOWABLE.md)** for the full description o
 
 #### Apache KIE (Kogito)
 
-`type: kogito` — runs against **Apache KIE (Kogito)**. Kogito compiles BPMN into a Quarkus service at build time, so apps are authored under `applications/<app-name>/` and turned into a runnable service by `scripts/build_kogito_app.sh <app-name>`.
+`type: kogito` — runs against **Apache KIE (Kogito)**. Kogito owns process execution and state, compiled into a Quarkus service at build time; CUGA FLO contributes LLM reasoning at each control point (task, gateway, hook) through the same MCP bridge interface.
 
-The hook mechanism is simpler than Flowable's — one script task, no boundary event and no shared `Task_DynamicSkip` — because Kogito rejects boundary events on script tasks and the script can perform the redirect itself.
+See **[README-KOGITO.md](docs/README-KOGITO.md)** for the full description of:
 
-See **[README-KOGITO.md](docs/README-KOGITO.md)** for the components (`KogitoProxy` plus the `CugaFlo` / `FlowRedirect` Java runtime), the app lifecycle, the constraints on writing a Kogito model, and the known gaps.
+- The app lifecycle: apps authored under `applications/<app-name>/`, turned into a runnable service by `scripts/build_kogito_app.sh <app-name>`
+- How the hook mechanism differs from Flowable's — one script task, no boundary event, no shared `Task_DynamicSkip` — plus the components (`KogitoProxy`, the `CugaFlo` / `FlowRedirect` Java runtime) and known gaps
 
 ---
 
