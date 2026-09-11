@@ -357,13 +357,14 @@ a remote agent must expose.
 
 ## Demo Apps
 
-Three inline demo processes are included under `applications/`, each illustrating a different combination of CUGA FLO capabilities:
+Four inline demo processes are included under `applications/`, each illustrating a different combination of CUGA FLO capabilities and, between them, exercising all three [`WorkflowEngine`](#workflowengine) backends:
 
-| App | Description | Highlights |
-|---|---|---|
-| `loan_approval` | Multi-step loan processing with credit check, compliance, and approval gateways | Exclusive gateway with agentic routing decision, followed by a policy-governed hook on the outgoing flow |
-| `receive_order` | Order intake flow with inventory check and fulfilment routing | Parallel gateway splitting execution across concurrent branches, followed by a hook that intercepts the merge transition |
-| `trip_planner` | Travel planning flow with itinerary assembly and booking steps | Two TaskAgents: one extracts the planning preference from natural language input, one plans the itinerary; no hooks |
+| App | Engine | Description | Highlights |
+|---|---|---|---|
+| `loan_approval` | [Flowable](#flowable) | Multi-step loan processing with credit check, compliance, and approval gateways | Exclusive gateway with agentic routing decision, followed by a policy-governed hook on the outgoing flow |
+| `loan_approval_kogito` | [Apache KIE (Kogito)](#apache-kie-kogito) | The same process as `loan_approval` — same BPMN, same policies — running on Kogito instead | Same highlights as `loan_approval`; compares the two engines against an identical process |
+| `receive_order` | [LangGraph](#langgraph) | Order intake flow with inventory check and fulfilment routing | Parallel gateway splitting execution across concurrent branches, followed by a hook that intercepts the merge transition |
+| `trip_planner` | [LangGraph](#langgraph) | Travel planning flow with itinerary assembly and booking steps | Two TaskAgents: one extracts the planning preference from natural language input, one plans the itinerary; no hooks |
 
 Start any demo with:
 
@@ -375,6 +376,9 @@ cuga-flo start loan_approval
 cuga-flo start receive_order
 cuga-flo start trip_planner
 ```
+
+`loan_approval` and `loan_approval_kogito` need their engine running first — see
+[README-FLOWABLE.md](docs/README-FLOWABLE.md) / [README-KOGITO.md](docs/README-KOGITO.md).
 
 Each app directory follows the same layout: a BPMN file, a `flow_config.yaml` referencing it, agent definitions, and per-task/gateway policy markdown files under `policies/`.
 
