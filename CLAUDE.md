@@ -2,6 +2,8 @@
 
 Always include `[skip ci]` in every git commit message.
 
+Do not add Claude/AI attribution (e.g. `Co-Authored-By: Claude ...`) to commit messages.
+
 # Environment
 
 If `cuga-flo start` is not recognized, remind the user to run `source .venv/bin/activate` first.
