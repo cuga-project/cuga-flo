@@ -89,12 +89,19 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def _signatures_present(t: dict) -> bool:
+    # Mirror apply()/revert()'s patch(1) `-p{strip}`, which counts the "a/"/"b/" prefix
+    # as one component; `tgt` here already has that "b/" stripped by the regex capture,
+    # so one fewer component needs stripping than `t["strip"]` itself (e.g. strip=2 ->
+    # drop just "src", leaving "cuga/..." relative to site-packages). Git mode has no
+    # "strip" key and targets are already repo-root-relative, so default to 1 -> 0.
+    strip = t.get("strip", 1) - 1
     for p in _patches():
         sig = SIGNATURES.get(p.name)
         if not sig:
             continue
         targets = [m.group(1) for m in re.finditer(r"^\+\+\+ b/(.+)$", p.read_text(), re.M)]
-        if not any(sig in (t["root"] / tgt).read_text() for tgt in targets if (t["root"] / tgt).exists()):
+        paths = [t["root"] / "/".join(tgt.split("/")[strip:]) for tgt in targets]
+        if not any(sig in path.read_text() for path in paths if path.exists()):
             return False
     return True
 
