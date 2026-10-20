@@ -91,8 +91,17 @@ if [[ -n "$missing" ]]; then
 fi
 
 # Port: --port wins, else the app's workflow_engine.url, else 8081.
+# Scoped to the workflow_engine: block specifically — a bare `url:` grep across the
+# whole file also matches unrelated keys (e.g. remote_agents[].url for an A2A binding)
+# and silently steals the wrong port.
 if [[ -z "$HTTP_PORT" ]]; then
-    HTTP_PORT="$(grep -hoE '^[[:space:]]*url:[[:space:]]*https?://[^:]+:[0-9]+' "$APP_DIR"/config/*.yaml 2>/dev/null \
+    HTTP_PORT="$(awk '
+        FNR==1 { in_block=0 }
+        /^workflow_engine:[[:space:]]*$/ { in_block=1; next }
+        in_block && /^[^[:space:]]/ { in_block=0 }
+        in_block
+    ' "$APP_DIR"/config/*.yaml 2>/dev/null \
+                 | grep -oE 'url:[[:space:]]*https?://[^:]+:[0-9]+' \
                  | grep -oE '[0-9]+$' | head -1 || true)"
     HTTP_PORT="${HTTP_PORT:-8081}"
 fi
