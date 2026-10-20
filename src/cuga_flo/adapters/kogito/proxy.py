@@ -60,13 +60,15 @@ load_dotenv(find_dotenv(usecwd=True))
 # Real values belong in .env (KOGITO_* keys) or the app's workflow_engine.url.
 _FALLBACK_BASE_URL = "http://localhost:8081"
 # `POST /{processId}` is SYNCHRONOUS for an automated process: Kogito does not answer until
-# the whole process has finished. Every CUGA FLO control point on the way is an LLM call of
-# 10-60s, so a modest process routinely needs minutes end to end.
+# the whole process has finished. Plain LLM control points are 10-60s each, but one
+# delegated via `agent_type: <remote>` waits on a full A2A round trip (CugaFlo.java allows
+# up to 300s per control point for that) — and a process can have several such tasks in
+# sequence, so the *sum* across one run can run into minutes.
 #
 # A timeout here does not cancel anything — Kogito runs the instance to completion regardless,
 # while CUGA sees a failure and a supervisor may retry, producing two concurrent instances for
 # one invocation. Keep this well above the worst-case sum of the control points.
-_FALLBACK_TIMEOUT = 600.0
+_FALLBACK_TIMEOUT = 1200.0
 
 
 class KogitoError(RuntimeError):

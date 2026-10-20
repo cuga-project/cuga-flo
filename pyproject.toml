@@ -9,10 +9,12 @@ dependencies = [
     # The reasoning agent and shared infrastructure. Not on PyPI yet — pinned to a
     # git ref; bump the ref and re-run `cuga-flo patch-host` together (see patches/).
     "cuga",
-    # <1.0: the 1.0 release moved a2a.types to protobuf. cuga_supervisor/a2a_protocol.py
-    # (which remote_agent.py drives) targets the 0.x pydantic API and swallows the
-    # ImportError into a boolean, so 1.0 silently disables A2A. Keep aligned with cuga-agent.
-    "a2a-sdk[http-server]>=0.3.22,<1.0",
+    # Pinned to what cuga-agent's own uv.lock resolves at the rev above. cuga_supervisor/
+    # a2a_protocol.py (which remote_agent.py drives) imports from a2a.compat.v0_3, a shim
+    # that only exists from 1.0 on — an older/newer a2a-sdk here makes that import fail,
+    # HAS_A2A_SDK silently swallows it to False, and every agent_type: agent0 task fails
+    # FlowAgent construction with "a2a-sdk is not installed". Keep aligned with cuga-agent.
+    "a2a-sdk[http-server]>=1.0.2,<2.0",
     "fastmcp>=3.2.0",
     "langgraph",
     "langchain-core>=1.2.22",

@@ -10,11 +10,18 @@ Two bindings, one client:
   agent is bound as a *tool* on the local reasoning agent, which still concludes the
   routing or the hook itself.
 
-Both go over the A2A client that already exists for the supervisor
-(``cuga_supervisor/a2a_protocol.py``); nothing here re-implements it.
+Both discover the peer through the A2A client that already exists for the supervisor
+(``cuga_supervisor/a2a_protocol.py`` — agent-card fetch + RPC URL resolution). The actual
+``SendMessage`` call is CUGA FLO's own: the shared client speaks the generic A2A SDK wire
+format (``method: "message/send"``, ``role: "user"``), but the agent0 reference service
+responds ``-32601 Method not found`` to that — it expects ``method: "SendMessage"``,
+``role: "ROLE_USER"`` and no ``kind`` on message parts (see
+``.claude/plans/agent0-team-brief.md``). Sending that shape directly is simpler than
+patching cuga-agent to support a second wire format alongside its own.
 """
 
 from typing import Any, Dict, Optional, Set
+from uuid import uuid4
 
 from loguru import logger
 
@@ -37,6 +44,10 @@ class RemoteAgentRegistry:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self._config: Dict[str, Any] = config or {}
         self._cards: Dict[str, Any] = {}
+        # One A2A contextId per remote agent, for the life of the process — correlates
+        # every call to that agent (delegations and consultations alike) as one ongoing
+        # exchange, the same way the agent card is cached once rather than per call.
+        self._context_ids: Dict[str, str] = {}
 
     def __contains__(self, name: str) -> bool:
         return name in self._config
@@ -84,6 +95,18 @@ class RemoteAgentRegistry:
             logger.info(f"Remote agent '{name}': agent card fetched from {cfg['url']}")
         return self._cards[name]
 
+    async def rpc_url(self, name: str) -> str:
+        """Resolve the agent's JSON-RPC endpoint from its card (cached with the card)."""
+        from cuga.backend.cuga_graph.nodes.cuga_supervisor.a2a_protocol import _agent_card_rpc_url
+
+        return _agent_card_rpc_url(await self.card(name), fallback_base=self._config[name]["url"])
+
+    def context_id(self, name: str) -> str:
+        """This process's A2A contextId with ``name``, generated once and reused."""
+        if name not in self._context_ids:
+            self._context_ids[name] = uuid4().hex
+        return self._context_ids[name]
+
     async def send(self, name: str, text: str, role: str, owner: str = "") -> str:
         """
         Send one message to a remote agent and return its reply text.
@@ -93,26 +116,79 @@ class RemoteAgentRegistry:
         and without this the trace would show a conclusion whose basis lived only in the
         remote agent's own logs.
         """
-        from cuga.backend.cuga_graph.nodes.cuga_supervisor.a2a_protocol import (
-            delegate_task_via_a2a_sdk,
-        )
         from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
 
         tracker = ActivityTracker()
         label = f"{owner} → " if owner else ""
         tracker.collect_step(Step(name=f"{label}remote '{name}' ({role})", data=text))
 
-        card = await self.card(name)
-        out = await delegate_task_via_a2a_sdk(
-            card,
+        url = await self.rpc_url(name)
+        answer = await _send_message(
+            url,
             text,
+            role,
+            context_id=self.context_id(name),
             auth=self.auth(name),
             timeout=self.timeout(name),
-            variables={"role": role},
         )
-        answer = out.get("result", "") or ""
         tracker.collect_step(Step(name=f"{label}remote '{name}' replied", data=answer))
         return answer
+
+
+async def _send_message(
+    rpc_url: str,
+    text: str,
+    role: str,
+    context_id: str,
+    auth: Optional[Dict[str, str]],
+    timeout: float,
+) -> str:
+    """POST one A2A ``SendMessage`` call in agent0's wire format and return the reply text.
+
+    Differs from the generic A2A SDK client in four ways agent0 requires: the method
+    name is ``SendMessage`` (not ``message/send``), the message role is the protobuf-enum
+    spelling ``ROLE_USER`` (not ``user``), message parts carry no ``kind`` field, and every
+    message carries a ``contextId`` correlating it with this process's other calls to the
+    same agent.
+    """
+    import httpx
+
+    headers = {"Content-Type": "application/json", "A2A-Version": "1.0"}
+    if auth and auth.get("type") == "bearer" and auth.get("token"):
+        headers["Authorization"] = f"Bearer {auth['token']}"
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": uuid4().hex,
+        "method": "SendMessage",
+        "params": {
+            "message": {
+                "role": "ROLE_USER",
+                "messageId": uuid4().hex,
+                "contextId": context_id,
+                "parts": [{"text": text}],
+            },
+            "metadata": {"variables": {"role": role}},
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(rpc_url, json=payload, headers=headers)
+    resp.raise_for_status()
+    body = resp.json()
+
+    if "error" in body:
+        err = body["error"]
+        raise RuntimeError(f"A2A SendMessage failed: {err.get('message', err)} (code {err.get('code')})")
+
+    task = (body.get("result") or {}).get("task") or {}
+    texts = [
+        part.get("text", "")
+        for artifact in task.get("artifacts", [])
+        for part in artifact.get("parts", [])
+        if part.get("text")
+    ]
+    return "\n".join(texts)
 
 
 class RemoteTaskExecutor:

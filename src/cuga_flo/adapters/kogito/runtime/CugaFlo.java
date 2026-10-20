@@ -32,7 +32,11 @@ public final class CugaFlo {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /**
-     * LLM reasoning at a control point takes 10-60s; the Flowable model allows 120s too.
+     * Plain LLM reasoning at a control point takes 10-60s, but a task delegated via
+     * {@code agent_type: <remote>} waits on a full A2A round trip instead — the remote
+     * agent's own configured timeout (``remote_agents.<name>.timeout`` in the app YAML)
+     * can be minutes, and this HTTP call wraps around all of that. Keep this comfortably
+     * above the largest configured remote-agent timeout in use.
      *
      * <p>HTTP/1.1 is pinned deliberately. Java's HttpClient defaults to HTTP/2 and opens
      * with an h2c upgrade, which uvicorn (serving the MCP app) rejects outright — the
@@ -200,7 +204,7 @@ public final class CugaFlo {
             HttpRequest request = HttpRequest.newBuilder(URI.create(String.valueOf(url)))
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/json, text/event-stream")
-                    .timeout(Duration.ofSeconds(120))
+                    .timeout(Duration.ofSeconds(300))
                     .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(body)))
                     .build();
 

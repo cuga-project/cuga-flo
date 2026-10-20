@@ -1,7 +1,8 @@
 """
-Checks for the remote-agent binding. No network: `fetch_agent_card` and
-`delegate_task_via_a2a_sdk` are patched, since everything here is about *our* wiring
-— key names, card caching, role metadata, failure routing.
+Checks for the remote-agent binding. No network: `fetch_agent_card` (a2a_protocol) and
+`_send_message` (ours — agent0's wire format, not the generic a2a-sdk client's) are
+patched, since everything here is about *our* wiring — key names, card caching, role
+metadata, failure routing.
 
 Run: uv run pytest tests/test_remote_agent.py
 """
@@ -14,7 +15,7 @@ from cuga_flo.engine import remote_agent as ra
 
 
 class _FakeA2A:
-    """Stands in for the two a2a_protocol functions, recording every call."""
+    """Stands in for agent-card fetch and the SendMessage POST, recording every call."""
 
     def __init__(self):
         self.card_calls = 0
@@ -24,9 +25,11 @@ class _FakeA2A:
         self.card_calls += 1
         return {"name": "agent0", "url": url}
 
-    async def delegate_task_via_a2a_sdk(self, card, task, auth=None, timeout=30.0, variables=None):
-        self.sends.append({"task": task, "timeout": timeout, "variables": variables})
-        return {"result": f"answer to: {task}", "variables": {}, "status": "success"}
+    async def send_message(self, rpc_url, text, role, context_id, auth=None, timeout=30.0):
+        self.sends.append(
+            {"text": text, "role": role, "context_id": context_id, "timeout": timeout, "rpc_url": rpc_url}
+        )
+        return f"answer to: {text}"
 
 
 @pytest.fixture
@@ -37,8 +40,8 @@ def fake(monkeypatch):
 
     proto = importlib.import_module(mod)
     monkeypatch.setattr(proto, "fetch_agent_card", f.fetch_agent_card)
-    monkeypatch.setattr(proto, "delegate_task_via_a2a_sdk", f.delegate_task_via_a2a_sdk)
     monkeypatch.setattr(proto, "HAS_A2A_SDK", True)
+    monkeypatch.setattr(ra, "_send_message", f.send_message)
     return f
 
 
@@ -55,6 +58,24 @@ def test_card_fetched_once_and_cached(fake):
 
     asyncio.run(go())
     assert fake.card_calls == 1, "card must be fetched once per process, not per call"
+
+
+def test_context_id_stable_per_agent_distinct_across_agents(fake):
+    """Correlates every call to one agent (delegation and consultation alike) as one
+    ongoing exchange, but a second agent gets its own — it is a different counterparty."""
+    reg = ra.RemoteAgentRegistry(
+        {"agent0": {"url": "http://a", "timeout": 90}, "report_bot": {"url": "http://b", "timeout": 45}}
+    )
+
+    async def go():
+        await reg.send("agent0", "task one", ra.ROLE_FULFILL)
+        await reg.send("agent0", "task two", ra.ROLE_CONSULT)
+        await reg.send("report_bot", "task three", ra.ROLE_FULFILL)
+
+    asyncio.run(go())
+    ids = [s["context_id"] for s in fake.sends]
+    assert ids[0] == ids[1], "same agent, same process -> same contextId"
+    assert ids[2] != ids[0], "a different agent is a different counterparty -> its own contextId"
     assert len(fake.sends) == 3
 
 
@@ -74,7 +95,7 @@ def test_both_bindings_send_their_role(fake):
         await ra.make_consultation_tool("agent0", reg, "gateway 'G'").ainvoke({"question": "which?"})
 
     asyncio.run(go())
-    roles = [s["variables"]["role"] for s in fake.sends]
+    roles = [s["role"] for s in fake.sends]
     assert roles == [ra.ROLE_FULFILL, ra.ROLE_CONSULT]
 
 

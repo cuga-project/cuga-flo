@@ -26,3 +26,14 @@ quarkus.http.cors.headers=content-type,authorization
 # retry. Left unset it is null, and the console fails with "Error fetching data" and
 # "missing the kogito.service.url property". This is the URL as the *browser* resolves it.
 kogito.service.url=http://localhost:@HTTP_PORT@
+
+# `POST /{processId}` runs the whole process — every control point, including any A2A
+# round trip a task delegates to — inside ONE JTA transaction (ProcessServiceImpl.
+# createProcessInstance is @Transactional). Quarkus/Narayana's default transaction
+# timeout is 60s; the reaper aborts the transaction in the background once that elapses,
+# even though the business logic keeps running. The process finishes "successfully" but
+# the final Data Index write then fails with ARJUNA016102 ("transaction is not active")
+# and the REST call surfaces it as a 500 — nothing CugaFlo.java's or KogitoProxy's own
+# HTTP timeouts can prevent, since this is a server-side transaction, not an HTTP one.
+# Keep at or above KogitoProxy._FALLBACK_TIMEOUT.
+quarkus.transaction-manager.default-transaction-timeout=1200
