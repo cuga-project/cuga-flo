@@ -1,0 +1,56 @@
+# G0 — legacy workflow (design doc §7): no agentic autonomy at all.
+#
+# Same BPMN model, same policies-independent demo app, same workflow_engine — only
+# tasks:/gateways:/hooks: differ from G1-G3. Used by the scenario runner
+# (cuga_flo.scenarios.runner), not by `cuga-flo start` directly.
+#
+# credit_score has no conventional/native implementation in this demo app — the only
+# thing that ever computes it is the LLM-driven task_agent, which G0 doesn't use. So
+# credit_score stays at its YAML default (0.0) for every case, and the gateway's
+# "${credit_score} > 0.6" condition is always false — G0 always rejects. This is
+# deliberate, not a bug: it is itself the experimental point of G0 — a conventional
+# workflow with no real scoring mechanism cannot adapt to who the applicant actually
+# is, however good their application looks on paper.
+
+flow:
+  name: "Loan Approval Process (SimPN) — G0 legacy"
+  id: "loan_approval_simpn_g0_v1"
+  version: "1.0"
+  bpmn_file: "BPMNdiagram.bpmn"
+
+workflow_engine:
+  type: simpn
+  url: http://localhost:8082
+  process_id: BPMNdiagram
+  callback_host: localhost
+  callback_port: 8090
+
+variables:
+  credit_score: 0.0
+  decision: "undecided"
+  manager_informed: false
+  applicant_name: ""
+  applicant_id: ""
+  loan_amount: 0
+  credit_history: ""
+  income: 0
+  employment_years: 0
+
+tasks:
+  - id: "Activity_0oydey5"
+    mode: native
+
+gateways:
+  Gateway_09ad5fc:
+    mode: native
+    flows:
+      Flow_0ybszcv:
+        condition: "${credit_score} > 0.6"
+      Flow_1jgea85:
+        condition: "${credit_score} <= 0.6"
+
+action_permissions:
+  permitted_actions: []
+  prohibited_actions: []
+
+# No hooks: block — G0 has no oversight autonomy.

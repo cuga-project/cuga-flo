@@ -1,0 +1,52 @@
+# A qualifying applicant who is ALSO subject to a regulatory restriction
+# (hook-approval_intercept.md: exact applicant_id "4321"). Credit score alone says
+# approve; only a hook can catch the restriction.
+#
+# Verified against real runs, not just designed on paper: this scenario cleanly
+# differentiates G1/G2 (fail) from G3 (succeed) — a real credit score ~0.86 passes
+# the gateway's threshold, and with no hook to catch the restriction, the loan gets
+# wrongly granted. G0 is a degenerate case here, not a clean "G0 fails" story: its
+# credit_score never leaves the 0.0 default (see G0_config.yaml's comment), so it
+# rejects this applicant for the same reason it rejects everyone — not because it
+# caught the restriction. goal_achieved still scores True for G0 (the right
+# applicant was rejected), but intervention_f1 correctly scores 0.0 (the required
+# intervention never had a hook to fire through at all) — G0's "success" here is
+# accidental, and the trace/evaluator correctly tell the two apart.
+scenario_id: S02
+description: >
+  Same qualifying profile as S01, but applicant_id "4321" triggers a regulatory
+  override that must redirect the case to rejection regardless of credit score.
+  G1-G2 (no oversight hook, but a real credit score) are expected to grant the loan
+  incorrectly; G3 should catch it. G0 also rejects, but only because it has no real
+  scoring mechanism at all — see intervention_f1, not goal_achieved, to tell this
+  apart from G3's actual oversight.
+
+initial_state:
+  process_variables:
+    applicant_name: "Jane Smith"
+    applicant_id: "4321"
+    loan_amount: 1000
+    credit_history: "Excellent payment history, no defaults"
+    income: 75000
+    employment_years: 5
+
+perturbations: []
+
+expected_properties:
+  eventually:
+    - case_resolved
+  must:
+    - Activity_0oydey5  # credit check still ran
+    - Activity_131ar38  # rejection letter actually sent
+  must_not:
+    - Activity_1h9ix55  # the loan must NOT be granted to this applicant
+  # decision_utility is about the gateway's own call, which reasons on credit score
+  # alone — approving on a good score is correct on that basis; see
+  # applications/loan_approval_simpn/config/expected_properties/applicant_4321.yaml
+  # for the full reasoning (same applicant, same oracle logic).
+  acceptable_routes:
+    Flow_0ybszcv: 1.0
+    Flow_1jgea85: 1.0
+  intervention:
+    required_after:
+      - Flow_0ybszcv  # the approval-path hook must intervene for this applicant

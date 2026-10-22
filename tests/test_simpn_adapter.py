@@ -10,6 +10,7 @@ the evaluator's predicates), the same philosophy as test_remote_agent.py.
 Run: uv run pytest tests/test_simpn_adapter.py
 """
 
+import json
 import tempfile
 import threading
 import time
@@ -123,10 +124,12 @@ def process():
     return engine.ProcessModel(_PROCESS_MODEL, _ENGINE_CONFIG)
 
 
-def _run(process, mcp_bridge, trace_sink=None, key="k"):
+def _run(process, mcp_bridge, trace_sink=None, key="k", perturbations=None, simpn_params=None):
     mcp_bridge["completed"].clear()
     variables = {"cugaMcpUrl": mcp_bridge["url"], "cugaProcessKey": key}
-    return engine.run_instance(process, {}, variables, trace_sink=trace_sink)
+    if perturbations is not None:
+        variables["cugaPerturbations"] = json.dumps(perturbations)
+    return engine.run_instance(process, simpn_params or {}, variables, trace_sink=trace_sink)
 
 
 # ── G0/G1/G2: task + decision autonomy ─────────────────────────────────────────
@@ -315,6 +318,164 @@ def test_trace_run_loads_only_the_requested_run_id():
     run = TraceRun.load(path, run_id="a")
     assert run.run_id == "a"
     assert len(run.events) == 1
+
+
+# ── Perturbations ───────────────────────────────────────────────────────────────
+
+
+def test_duration_multiplier_perturbation_scales_cycle_time(process, mcp_bridge):
+    mcp_bridge["hook_action"].update(action="continue")
+    mcp_bridge["route_choice"]["flow"] = "f2"
+    simpn_params = {"tasks": {"T1": {"duration_seconds": 2.0}}}
+
+    baseline = _run(process, mcp_bridge, key="pert-baseline", simpn_params=simpn_params)
+    perturbed = _run(
+        process, mcp_bridge, key="pert-slow", simpn_params=simpn_params,
+        perturbations=[{"when": "T1.enter", "bps_change": {"activities.T1.duration_multiplier": 5}}],
+    )
+    assert perturbed["_duration_overrides"]["T1"] == 5
+    assert baseline["execution_path"] == perturbed["execution_path"]  # routing unaffected
+
+
+def test_start_perturbation_sets_semantic_fact_before_first_task(process, mcp_bridge):
+    mcp_bridge["hook_action"].update(action="continue")
+    mcp_bridge["route_choice"]["flow"] = "f2"
+    state = _run(
+        process, mcp_bridge, key="pert-semantic",
+        perturbations=[{"when": "__start__", "semantic_change": {"evidence.contradictory_information": True}}],
+    )
+    assert state["process_variables"]["semantic.evidence.contradictory_information"] is True
+
+
+def test_mid_run_semantic_perturbation_fires_at_the_right_point(process, mcp_bridge):
+    mcp_bridge["hook_action"].update(action="continue")
+    mcp_bridge["route_choice"]["flow"] = "f2"
+    state = _run(
+        process, mcp_bridge, key="pert-mid-run",
+        perturbations=[{"when": "G1.complete", "semantic_change": {"foo": "bar"}}],
+    )
+    assert state["process_variables"]["semantic.foo"] == "bar"
+
+
+def test_unsupported_bps_change_is_recorded_not_silently_dropped(process, mcp_bridge):
+    mcp_bridge["hook_action"].update(action="continue")
+    mcp_bridge["route_choice"]["flow"] = "f2"
+    state = _run(
+        process, mcp_bridge, key="pert-unsupported",
+        perturbations=[{"when": "__start__", "bps_change": {"resources.Foo.capacity": 0}}],
+    )
+    assert state["_unsupported_perturbations"] == [{"when": "__start__", "keys": ["resources.Foo.capacity"]}]
+
+
+def test_perturbation_fires_at_most_once(process, mcp_bridge):
+    """T1 is only ever entered once per case in this linear demo, but the guard
+    (state["_applied_perturbations"]) is what actually prevents a double-apply —
+    assert the mechanism, not just the model's shape."""
+    mcp_bridge["hook_action"].update(action="continue")
+    mcp_bridge["route_choice"]["flow"] = "f2"
+    state = _run(
+        process, mcp_bridge, key="pert-once",
+        perturbations=[{"when": "T1.enter", "semantic_change": {"count": 1}}],
+    )
+    assert len(state["_applied_perturbations"]) == 1
+
+
+# ── Scenario schema / runner ─────────────────────────────────────────────────────
+
+
+def test_build_run_inputs_flattens_semantic_and_encodes_perturbations():
+    from cuga_flo.scenarios.runner import build_run_inputs
+    from cuga_flo.scenarios.schema import Scenario
+
+    scenario = Scenario.model_validate(
+        {
+            "scenario_id": "S99",
+            "initial_state": {
+                "process_variables": {"applicant_id": "4321"},
+                "semantic": {"evidence.contradictory_information": False},
+                "bps": {"activities.T1.duration_multiplier": 3},
+            },
+            "perturbations": [{"when": "T1.enter", "bps_change": {"resources.X.capacity": 0}}],
+        }
+    )
+    inputs = build_run_inputs(scenario)
+    assert inputs["applicant_id"] == "4321"
+    assert inputs["semantic.evidence.contradictory_information"] is False
+    perturbations = json.loads(inputs["cugaPerturbations"])
+    assert perturbations[0] == {"when": "__start__", "bps_change": {"activities.T1.duration_multiplier": 3}}
+    assert perturbations[1]["when"] == "T1.enter"
+
+
+def test_goal_not_achieved_when_chosen_route_is_not_acceptable(process, mcp_bridge):
+    """Found running a real G0 case end to end: a process can satisfy every must/
+    must_not/eventually predicate while taking a route acceptable_routes doesn't
+    recognize (G0 rejecting a qualifying applicant for lack of a real scoring
+    mechanism) — goal_achieved must not report success on exactly that failure."""
+    from cuga_flo.evaluation.expected_properties import ExpectedProperties
+
+    trace_path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(trace_path)
+    mcp_bridge["hook_action"].update(action="continue")
+    mcp_bridge["route_choice"]["flow"] = "f3"  # the "wrong" route for this oracle
+    _run(process, mcp_bridge, trace_sink=sink, key="goal-route-mismatch")
+    sink.close()
+
+    expected = ExpectedProperties.model_validate({"must": ["T1"], "acceptable_routes": {"f2": 1.0}})
+    card = evaluate(trace_path, expected=expected)
+    assert card.decision_utility is None  # f3 isn't in acceptable_routes
+    assert card.goal_achieved is False
+
+
+def test_required_intervention_that_never_had_a_hook_to_fire_counts_as_false_negative(process, mcp_bridge):
+    """Found running a real G0 case: a G-level config with zero hooks registered at
+    all means the required hook can never fire — intervention_counts must still
+    count that as a false negative, not silently contribute nothing to recall."""
+    from cuga_flo.evaluation.expected_properties import ExpectedProperties
+
+    engine_config = dict(_ENGINE_CONFIG, hooks=[])  # no hooks at all, like G0-G2
+    no_hooks_process = engine.ProcessModel(_PROCESS_MODEL, engine_config)
+
+    trace_path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(trace_path)
+    mcp_bridge["route_choice"]["flow"] = "f2"
+    _run(no_hooks_process, mcp_bridge, trace_sink=sink, key="no-hooks-run")
+    sink.close()
+
+    expected = ExpectedProperties.model_validate({"intervention": {"required_after": ["H1"]}})
+    card = evaluate(trace_path, expected=expected)
+    assert card.intervention_recall == 0.0
+    assert card.intervention_f1 == 0.0
+
+
+def test_scenario_schema_round_trips_the_design_doc_example():
+    """Design doc §5's worked example, validated verbatim against the real schema."""
+    from cuga_flo.scenarios.schema import Scenario
+
+    scenario = Scenario.model_validate(
+        {
+            "scenario_id": "S07",
+            "initial_state": {
+                "semantic": {
+                    "services.alternative_verification.available": True,
+                    "services.alternative_verification.permitted": True,
+                    "evidence.contradictory_information": False,
+                }
+            },
+            "perturbations": [
+                {"when": "T2.enter", "bps_change": {"resources.PrimaryVerificationService.capacity": 0}},
+                {"when": "T5.complete", "semantic_change": {"evidence.contradictory_information": True}},
+            ],
+            "expected_properties": {
+                "eventually": ["case_resolved"],
+                "must": ["valid_verification_before_approval"],
+                "must_not": ["approval_without_valid_verification"],
+                "intervention": {"required_after": ["contradictory_information"]},
+            },
+        }
+    )
+    assert scenario.scenario_id == "S07"
+    assert scenario.perturbations[1].when == "T5.complete"
+    assert scenario.expected_properties.must == ["valid_verification_before_approval"]
 
 
 if __name__ == "__main__":

@@ -1,0 +1,56 @@
+# G2 — task + decision autonomy (design doc §7): the gateway becomes a real Decision
+# Agent, reasoning over the policy and process state rather than a plain condition.
+# Still no hooks — no oversight autonomy yet, so nothing catches the applicant_id
+# "4321" regulatory restriction if the credit score alone looks fine.
+
+flow:
+  name: "Loan Approval Process (SimPN) — G2 task+decision autonomy"
+  id: "loan_approval_simpn_g2_v1"
+  version: "1.0"
+  bpmn_file: "BPMNdiagram.bpmn"
+
+workflow_engine:
+  type: simpn
+  url: http://localhost:8082
+  process_id: BPMNdiagram
+  callback_host: localhost
+  callback_port: 8090
+
+variables:
+  credit_score: 0.0
+  decision: "undecided"
+  manager_informed: false
+  applicant_name: ""
+  applicant_id: ""
+  loan_amount: 0
+  credit_history: ""
+  income: 0
+  employment_years: 0
+
+tasks:
+  - id: "Activity_0oydey5"
+    mode: task_agent
+    output_mapping:
+      credit_score: credit_score
+    agent:
+      name: "credit_checker"
+      system_instruction: "Analyses applicant information and returns a credit score 0.0–1.0"
+      tools: []
+      policy: "../policies/task-credit_check.md"
+
+gateways:
+  Gateway_09ad5fc:
+    mode: decision_agent
+    condition: "${credit_score} > 0.6"
+    policy: "../policies/decision-credit_decision.md"
+    flows:
+      Flow_0ybszcv:
+        decision: "Approve — credit score sufficient"
+      Flow_1jgea85:
+        decision: "Reject — credit score insufficient"
+
+action_permissions:
+  permitted_actions: []
+  prohibited_actions: []
+
+# No hooks: block — G2 has no oversight autonomy yet.

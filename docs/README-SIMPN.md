@@ -169,11 +169,101 @@ hook counts, `policy_compliant`) are always computed; `goal_achieved`,
 `expected_properties` file (design doc §6.3 — `eventually`/`must`/`must_not`/
 `acceptable_routes`/`intervention.required_after`, predicates named either from a
 small built-in registry or, by fallback, "this element id appears in the execution
-path"). `perturbation_recovered` is always `not_yet_computable`: it needs the
-scenario/perturbation layer this integration doesn't build — see the plan's Scope
-section for what's deliberately out: the scenario DSL's `initial_state`/
-`perturbations`, the semantic-world layer, the scenario-runner CLI, and LLM-assisted
-scenario authoring.
+path"). `goal_achieved` also fails when `acceptable_routes` is declared and the
+actual chosen route isn't in it — found running a real G0 case: a process can
+satisfy every `must`/`must_not`/`eventually` predicate while still taking a route
+nobody said was acceptable (G0 rejecting a well-qualified applicant for lack of a
+real scoring mechanism), and without this check `goal_achieved` would report success
+on exactly that failure. `perturbation_recovered` is always `not_yet_computable`: it
+needs multiple runs (perturbed vs. nominal) to compare, not just one to judge.
+
+---
+
+## Scenarios and the scenario runner
+
+`cuga_flo.scenarios` builds on the evaluator above to run one frozen scenario across
+the G0-G3 autonomy ladder — design doc §5-§8, minus the LLM-assisted authoring and
+statistical-analysis layers (still deferred).
+
+### Scenario format — `cuga_flo.scenarios.schema.Scenario`
+
+```yaml
+scenario_id: S02
+initial_state:
+  process_variables: {applicant_id: "4321", loan_amount: 1000, ...}  # CUGA-FLO extension — see below
+  semantic: {evidence.contradictory_information: false}               # design doc §4.2/§6.2
+  bps: {activities.Activity_0oydey5.duration_multiplier: 1}           # design doc §6.1
+perturbations:
+  - when: "Activity_0oydey5.enter"                                    # "<element_id>.<enter|complete>"
+    bps_change: {activities.Activity_0oydey5.duration_multiplier: 5}
+  - when: "Gateway_09ad5fc.complete"
+    semantic_change: {evidence.contradictory_information: true}
+expected_properties: { ... }   # cuga_flo.evaluation.expected_properties.ExpectedProperties, reused verbatim
+```
+
+`initial_state.process_variables` is a CUGA-FLO-specific extension beyond the design
+doc's bare `semantic:`-only example: a frozen, reproducible scenario needs to say
+*which case* is being run (applicant id, loan amount, ...) without relying on
+free-text `_user_message` extraction, which would reintroduce the non-determinism
+frozen scenarios exist to remove.
+
+### The "thin semantic world" is just process variables
+
+`initial_state.semantic` and every `semantic_change` land as `semantic.<dotted.key>`
+entries in `process_variables` — ordinary variables any task/gateway/hook policy can
+already read via `${semantic.evidence.contradictory_information}`-style templating
+or plain prose reference, nothing new the engine has to know about. This is why
+`engine.py` needed zero semantic-world-specific code.
+
+### Perturbation injection — what `bps_change` can and can't do
+
+Only `activities.<element_id>.duration_multiplier` has a real effect — see
+engine.py's `check_point`/`perturbations.py`. Anything else under `bps_change` (e.g.
+design doc §6.1's `resources.X.capacity`) is recorded as `unsupported_bps_keys` in a
+`PERTURBATION_APPLIED` trace event rather than silently applied or dropped — true
+resource-contention modeling needs the shared-`DecProblem` upgrade the "Known gaps"
+section below already flags. A synthetic `when: "__start__"` entry (built from
+`initial_state.bps`) applies once, unconditionally, before the first token is
+seeded; real `perturbations:` entries apply at the matching element's `enter`
+(before duration/MCP-call work) or `complete` (after) point, each at most once per
+case.
+
+### G0-G3 configs
+
+The runner expects one config file per level, named `G0_config.yaml` ..
+`G3_config.yaml` under the app's `config/`, sharing the same BPMN model and
+policies — only `tasks:`/`gateways:`/`hooks:` differ. `loan_approval_simpn`'s four
+variants are the worked example: G0 strips the task to `mode: native` and the
+gateway to a plain condition (so `credit_score` never leaves its 0.0 default — no
+native scoring formula exists in this demo, which is itself the point: G0 cannot
+assess an applicant it has no deterministic way to score), G1 adds the Task Agent
+back, G2 adds the Decision Agent, G3 (content-identical to the app's default
+`loan_approval_simpn_config.yaml`) adds the two oversight hooks.
+
+### Running it
+
+```bash
+source .venv/bin/activate
+cuga-flo run-scenario loan_approval_simpn applications/loan_approval_simpn/scenarios/S02-regulatory-restriction.yaml \
+    --configs G0,G1,G2,G3 --repetitions 3 --trace-dir traces/
+```
+
+Builds and starts each `G<n>_config.yaml`'s service in turn (`scripts/
+build_simpn_app.sh --config ...`), one at a time on the same port, stopped before
+the next — unattended N-repetitions-x-4-configs is the point, so this does not
+follow the manual three-terminal workflow `CLAUDE.md` documents for a single
+interactive run. Prints a `goal`/`util`/`interv_f1`/`cycle_s` comparison table across
+configs. `loan_approval_simpn/scenarios/S01-nominal.yaml` and `S02-regulatory-
+restriction.yaml` are designed to actually differentiate G-levels (see each file's
+own comment for the expected story); `S03-slow-credit-check.yaml` exercises the
+perturbation mechanism itself rather than autonomy differentiation.
+
+### Still deferred
+
+The scenario-runner CLI and the comparative matrix are now built; LLM-assisted
+scenario authoring (design doc §5 — turning a natural-language scenario idea into a
+validated YAML) and the statistical/mixed-effects analysis layer (design doc §16)
+remain out of scope.
 
 ---
 
@@ -184,10 +274,12 @@ An app is authored entirely under `applications/<app-name>/`:
 ```
 <app-name>/
 ├── config/
-│   ├── <app-name>_config.yaml          workflow_engine.type: simpn
+│   ├── <app-name>_config.yaml          workflow_engine.type: simpn — the default, single-run config
+│   ├── G0_config.yaml .. G3_config.yaml  autonomy-ladder variants — only the scenario runner uses these
 │   ├── BPMNdiagram.bpmn                the same clean model CUGA FLO itself parses
 │   ├── simpn_parameters.yaml           BPS durations — this engine's own file
 │   └── expected_properties/*.yaml      oracle fixtures, one per case worth asserting on
+├── scenarios/*.yaml                    frozen scenarios — see "Scenarios and the scenario runner" below
 └── policies/                           engine-independent markdown
 ```
 
@@ -224,3 +316,12 @@ peer.
 - **`add_node` cannot invent a new element at runtime** — its target must already be
   modeled in the BPMN (a "pre-declared" node, per the design doc's own bounded
   vocabulary framing), not a fresh synthetic task minted on the fly.
+- **`bps_change`/`initial_state.bps` supports exactly one key shape** —
+  `activities.<id>.duration_multiplier` — for the same one-`DecProblem`-per-instance
+  reason as the first gap above. Anything else is recorded, not applied; see
+  "Perturbation injection" above.
+- **One trace file per scenario repetition, not one shared file correlated by
+  `run_id`.** `cuga_flo.scenarios.runner.run_repetition` removes any stale file at
+  its `trace_path` before each run — simpler than making `TraceRun.load()` pick one
+  run out of several sharing a file, at the cost of one trace file per
+  `(scenario, config, repetition)` rather than one per scenario run.

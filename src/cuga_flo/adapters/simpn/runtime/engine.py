@@ -39,6 +39,7 @@ parallel-gateway app is in scope.
 
 from __future__ import annotations
 
+import json
 import operator as _op
 import re
 import uuid
@@ -47,6 +48,7 @@ from typing import Any
 
 from simpn.simulator import DecProblem, SimToken
 
+from . import perturbations as _perturbations
 from . import trace as _trace
 
 _DEFAULT_DURATION_SECONDS = 1.0
@@ -178,6 +180,11 @@ def _new_state(process: ProcessModel, variables: dict[str, Any]) -> dict:
         "is_complete": False,
         "is_halted": False,
         "halt_reason": "",
+        # Scenario/perturbation bookkeeping — see perturbations.py. Empty/unused for a
+        # plain (non-scenario) run.
+        "_applied_perturbations": set(),
+        "_duration_overrides": {},
+        "_unsupported_perturbations": [],
     }
 
 
@@ -302,12 +309,14 @@ def build_problem(
     simpn_params: dict,
     mcp_url: str,
     trace_sink,
+    perturbations: list[dict] | None = None,
 ) -> tuple[DecProblem, Any]:
     """Build a fresh DecProblem for one instance. Returns (problem, start_place) —
     start_place is wherever the initial token must land (the start event's outgoing
     flow's target, or that flow's hook_in place if the very first edge is hooked)."""
     from . import mcp_client
 
+    perturbations = perturbations or []
     problem = DecProblem()
     places: dict[str, Any] = {eid: problem.add_var(eid) for eid in process.elements}
     places[_TERMINATED] = problem.add_var(_TERMINATED)
@@ -324,6 +333,13 @@ def build_problem(
             payload=payload,
         )
 
+    def check_point(state: dict, element_id: str, point: str) -> None:
+        """Apply any not-yet-applied perturbation triggered by `element_id.point` —
+        see perturbations.py. A task reading `state["_duration_overrides"]` for its
+        own duration must call this at "enter" BEFORE computing its duration."""
+        for payload in _perturbations.check_and_apply(state, perturbations, element_id, point):
+            trace_control_point(state, "PERTURBATION_APPLIED", element_id, payload)
+
     def target_place_for(flow: dict) -> Any:
         """The place a flow's token should land on — hook_in if this edge is hooked,
         else straight to the target element's place."""
@@ -331,19 +347,23 @@ def build_problem(
         return hook_in_places[flow["id"]] if hook else places[flow["target_ref"]]
 
     def make_task_behavior(eid: str, element: dict):
-        duration = _duration(eid, simpn_params)
         is_agentic = eid in process.agentic_task_ids
         outgoing = process.outgoing.get(eid, [])
         instruction = process.task_instructions.get(eid)
 
         def behavior(state: dict):
+            check_point(state, eid, "enter")
+            base_duration = _duration(eid, simpn_params)
+            multiplier = state["_duration_overrides"].get(eid, 1.0)
+            duration = base_duration * multiplier
             if is_agentic:
                 ctx = _ctx(state, eid, element["name"], process, task_instruction=instruction)
                 result = mcp_client.call_tool(mcp_url, "execute_task", {"task_id": eid, "ctx": ctx})
                 state["process_variables"] = result.get("process_variables", state["process_variables"])
                 state["task_results"].update(result.get("task_results", {}))
             state["execution_path"] = state["execution_path"] + [eid]
-            trace_control_point(state, "ACTIVITY_COMPLETE", eid, {"agentic": is_agentic})
+            trace_control_point(state, "ACTIVITY_COMPLETE", eid, {"agentic": is_agentic, "duration": duration})
+            check_point(state, eid, "complete")
             if not outgoing:  # a task with no outgoing flow is a dead end, not a normal model
                 state["is_complete"] = True
             return [SimToken(state, delay=duration)]
@@ -355,6 +375,7 @@ def build_problem(
         is_agentic = eid in process.decision_gateway_ids
 
         def behavior(state: dict):
+            check_point(state, eid, "enter")
             state["execution_path"] = state["execution_path"] + [eid]
             if len(outgoing) <= 1:
                 chosen_flow = outgoing[0] if outgoing else None
@@ -374,6 +395,7 @@ def build_problem(
                 )
             state["gateway_decisions"][eid] = chosen_flow["id"] if chosen_flow else ""
             trace_control_point(state, "GATEWAY_RESOLVED", eid, {"chosen_flow": state["gateway_decisions"][eid]})
+            check_point(state, eid, "complete")
 
             result = [None] * len(outgoing)
             if chosen_flow is not None:
@@ -391,6 +413,7 @@ def build_problem(
         outgoing_places = [places[eid] for eid in target_ids] + [places[_TERMINATED]]
 
         def behavior(state: dict):
+            check_point(state, hook["id"], "enter")
             ctx = _ctx(state, normal_next_id, process.elements[normal_next_id]["name"], process, edge_id=flow["id"])
             result = mcp_client.call_tool(mcp_url, "evaluate_hook", {"hook_id": hook["id"], "ctx": ctx})
             state["process_variables"].update(result.get("state_updates") or {})
@@ -401,6 +424,7 @@ def build_problem(
             trace_control_point(
                 state, "HOOK_EVALUATED", hook["id"], {"action": action, "target": target}
             )
+            check_point(state, hook["id"], "complete")
 
             out = [None] * len(target_ids) + [None]
             if target is None:  # terminate
@@ -428,6 +452,7 @@ def build_problem(
         elif etype == "endEvent":
             def make_end_behavior(_eid: str):
                 def behavior(state: dict):
+                    check_point(state, _eid, "enter")
                     state["execution_path"] = state["execution_path"] + [_eid]
                     state["is_complete"] = True
                     trace_control_point(state, "CASE_COMPLETE", _eid, {})
@@ -461,10 +486,14 @@ def run_instance(
     """
     Run one simulated case to completion and signal `complete_process`.
 
-    `variables` carries `cugaMcpUrl`/`cugaProcessKey` the same way Kogito's process
-    variables do (set by MCPFlowBridge.register_simpn_engine) — read here and stripped
-    before they become part of `process_variables`, the same way FlowAgent's own
-    `_build_task_input` already excludes `cugaProcessKey` by name from what an LLM sees.
+    `variables` carries `cugaMcpUrl`/`cugaProcessKey`/`cugaTracePath` the same way
+    Kogito's process variables do (set by MCPFlowBridge.register_simpn_engine) — read
+    here and stripped before they become part of `process_variables`, the same way
+    FlowAgent's own `_build_task_input` already excludes `cugaProcessKey` by name from
+    what an LLM sees. `cugaPerturbations` (a JSON-encoded list) rides the same way —
+    it's how `cuga_flo.scenarios.runner` (main process) hands this run's scenario
+    perturbations to the service without any bridge/proxy wire-format change: it's
+    just one more process variable, exactly like the others.
 
     Without the final `complete_process` call, FlowAgent.invoke()'s completion future
     never resolves and the caller hangs forever — this is the one call every workflow
@@ -476,6 +505,7 @@ def run_instance(
     mcp_url = variables.pop("cugaMcpUrl", None)
     process_key = variables.pop("cugaProcessKey", None)
     trace_path = variables.pop("cugaTracePath", None)
+    perturbations = json.loads(variables.pop("cugaPerturbations", "[]") or "[]")
     if not mcp_url:
         raise ValueError("cugaMcpUrl is not set in the start variables")
 
@@ -483,8 +513,19 @@ def run_instance(
     if owns_sink:
         trace_sink = _trace.TraceSink(trace_path)
 
-    problem, start_place = build_problem(process, simpn_params, mcp_url, trace_sink)
+    problem, start_place = build_problem(process, simpn_params, mcp_url, trace_sink, perturbations)
     state = _new_state(process, variables)
+
+    for payload in _perturbations.apply_start_perturbations(state, perturbations):
+        _trace.emit(
+            trace_sink,
+            run_id=state["process_instance_id"],
+            case_id=state["process_instance_id"],
+            source="simpn",
+            event_type="PERTURBATION_APPLIED",
+            bpmn_element_id="",
+            payload=payload,
+        )
 
     _trace.emit(
         trace_sink,

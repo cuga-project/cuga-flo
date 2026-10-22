@@ -1,0 +1,54 @@
+# G1 — task autonomy (design doc §7): credit_checker becomes a real Task Agent, so
+# credit_score reflects an actual assessment of the applicant instead of the frozen
+# 0.0 default. The gateway still routes on a plain condition — no Decision Agent yet
+# — and there are still no hooks.
+
+flow:
+  name: "Loan Approval Process (SimPN) — G1 task autonomy"
+  id: "loan_approval_simpn_g1_v1"
+  version: "1.0"
+  bpmn_file: "BPMNdiagram.bpmn"
+
+workflow_engine:
+  type: simpn
+  url: http://localhost:8082
+  process_id: BPMNdiagram
+  callback_host: localhost
+  callback_port: 8090
+
+variables:
+  credit_score: 0.0
+  decision: "undecided"
+  manager_informed: false
+  applicant_name: ""
+  applicant_id: ""
+  loan_amount: 0
+  credit_history: ""
+  income: 0
+  employment_years: 0
+
+tasks:
+  - id: "Activity_0oydey5"
+    mode: task_agent
+    output_mapping:
+      credit_score: credit_score
+    agent:
+      name: "credit_checker"
+      system_instruction: "Analyses applicant information and returns a credit score 0.0–1.0"
+      tools: []
+      policy: "../policies/task-credit_check.md"
+
+gateways:
+  Gateway_09ad5fc:
+    mode: native
+    flows:
+      Flow_0ybszcv:
+        condition: "${credit_score} > 0.6"
+      Flow_1jgea85:
+        condition: "${credit_score} <= 0.6"
+
+action_permissions:
+  permitted_actions: []
+  prohibited_actions: []
+
+# No hooks: block — G1 has no oversight autonomy yet.

@@ -39,9 +39,10 @@ die() { echo "error: $*" >&2; exit 1; }
 
 # ── arguments ────────────────────────────────────────────────────────────────
 
-[[ $# -ge 1 ]] || die "usage: $(basename "$0") <app-name> [--out DIR] [--port N] [--no-build] [--clean]"
+[[ $# -ge 1 ]] || die "usage: $(basename "$0") <app-name> [--config PATH] [--out DIR] [--port N] [--no-build] [--clean]"
 
 APP_NAME="$1"; shift
+CONFIG_OVERRIDE=""
 OUT_DIR=""
 HTTP_PORT=""
 RUN_BUILD=1
@@ -49,6 +50,7 @@ CLEAN=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --config)   CONFIG_OVERRIDE="${2:-}"; shift 2 ;;
         --out)      OUT_DIR="${2:-}"; shift 2 ;;
         --port)     HTTP_PORT="${2:-}"; shift 2 ;;
         --no-build) RUN_BUILD=0; shift ;;
@@ -62,7 +64,15 @@ OUT_DIR="${OUT_DIR:-$REPO_ROOT/build/simpn/$APP_NAME}"
 
 [[ -d "$APP_DIR" ]] || die "no app '$APP_NAME' under $APPS_DIR"
 
-CONFIG_YAML="$APP_DIR/config/${APP_NAME}_config.yaml"
+# --config overrides the default <app-name>_config.yaml naming — used by the
+# scenario runner to build G0-G3 autonomy-configuration variants that live
+# alongside the app's default config, sharing the same BPMN model and policies
+# (see applications/loan_approval_simpn/config/G0_config.yaml and siblings).
+if [[ -n "$CONFIG_OVERRIDE" ]]; then
+    CONFIG_YAML="$CONFIG_OVERRIDE"
+else
+    CONFIG_YAML="$APP_DIR/config/${APP_NAME}_config.yaml"
+fi
 [[ -f "$CONFIG_YAML" ]] || die "expected $CONFIG_YAML (see loan_approval_simpn for the naming convention)"
 
 SIMPN_PARAMS="$APP_DIR/config/simpn_parameters.yaml"

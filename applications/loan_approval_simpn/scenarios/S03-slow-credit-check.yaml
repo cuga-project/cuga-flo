@@ -1,0 +1,43 @@
+# Same qualifying applicant as S01, but with a BPS perturbation: the credit-check
+# task's simulated duration is multiplied 5x the moment it's entered. This exercises
+# the perturbation-injection mechanism itself (observable via the evaluator's
+# cycle_time_seconds), independent of autonomy level — a pure operational slowdown,
+# not something any G-level is expected to "recover" from differently. It also
+# demonstrates a semantic-world fact being injected mid-run, purely to show the
+# mechanism: nothing in this demo app's policies currently reads
+# `semantic.evidence.contradictory_information`, so it has no behavioral effect here
+# — it's there to prove the fact actually lands in process_variables, visible to a
+# future policy that does reason about it.
+scenario_id: S03
+description: >
+  Nominal applicant; the credit-check task is perturbed to take 5x as long once
+  entered, and a semantic fact arrives after the gateway resolves. Demonstrates
+  perturbation injection mechanically rather than testing autonomy differentiation.
+
+initial_state:
+  process_variables:
+    applicant_name: "John Doe"
+    applicant_id: "A12345"
+    loan_amount: 1000
+    credit_history: "Excellent payment history, no defaults"
+    income: 75000
+    employment_years: 5
+
+perturbations:
+  - when: "Activity_0oydey5.enter"
+    bps_change:
+      activities.Activity_0oydey5.duration_multiplier: 5
+  - when: "Gateway_09ad5fc.complete"
+    semantic_change:
+      evidence.contradictory_information: true
+
+expected_properties:
+  eventually:
+    - case_resolved
+  must:
+    - Activity_0oydey5
+  must_not: []
+  acceptable_routes:
+    Flow_0ybszcv: 1.0
+  intervention:
+    required_after: []

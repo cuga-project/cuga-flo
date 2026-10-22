@@ -1,0 +1,72 @@
+# G3 — task + decision + oversight autonomy (design doc §7): adds the two hooks —
+# a pre-credit-check screening gate and a post-decision regulatory-override check.
+# Content-identical to loan_approval_simpn_config.yaml (the default, single-run
+# config used by `cuga-flo start loan_approval_simpn`) apart from flow.id — kept as
+# its own file so the scenario runner's G0-G3 matrix always builds from one
+# consistent config-file naming convention (G0_config.yaml .. G3_config.yaml),
+# rather than special-casing G3 to the app's default filename.
+
+flow:
+  name: "Loan Approval Process (SimPN) — G3 full autonomy"
+  id: "loan_approval_simpn_g3_v1"
+  version: "1.0"
+  bpmn_file: "BPMNdiagram.bpmn"
+
+workflow_engine:
+  type: simpn
+  url: http://localhost:8082
+  process_id: BPMNdiagram
+  callback_host: localhost
+  callback_port: 8090
+
+variables:
+  credit_score: 0.0
+  decision: "undecided"
+  manager_informed: false
+  applicant_name: ""
+  applicant_id: ""
+  loan_amount: 0
+  credit_history: ""
+  income: 0
+  employment_years: 0
+
+tasks:
+  - id: "Activity_0oydey5"
+    mode: task_agent
+    output_mapping:
+      credit_score: credit_score
+    agent:
+      name: "credit_checker"
+      system_instruction: "Analyses applicant information and returns a credit score 0.0–1.0"
+      tools: []
+      policy: "../policies/task-credit_check.md"
+
+gateways:
+  Gateway_09ad5fc:
+    mode: decision_agent
+    condition: "${credit_score} > 0.6"
+    policy: "../policies/decision-credit_decision.md"
+    flows:
+      Flow_0ybszcv:
+        decision: "Approve — credit score sufficient"
+      Flow_1jgea85:
+        decision: "Reject — credit score insufficient"
+
+action_permissions:
+  permitted_actions:
+    - continue
+    - skip_to
+    - terminate
+  prohibited_actions:
+    - skip_node
+    - swap_nodes
+
+hooks:
+  - id: "Flow_1e5ztf6"
+    type: "edge"
+    location: "Flow_1e5ztf6"
+    policy: "../policies/hook-screen-before-credit-check.md"
+  - id: "Flow_0ybszcv"
+    type: "edge"
+    location: "Flow_0ybszcv"
+    policy: "../policies/hook-approval_intercept.md"

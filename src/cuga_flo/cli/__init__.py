@@ -42,6 +42,27 @@ def evaluate(
     raise typer.Exit(run_evaluate(trace_path, expected, run_id))
 
 
+@app.command("run-scenario")
+def run_scenario(
+    app_name: str = typer.Argument(..., help="Application under applications/ (e.g. loan_approval_simpn)."),
+    scenario_path: str = typer.Argument(..., help="Frozen scenario YAML, e.g. applications/<app>/scenarios/S01-nominal.yaml."),
+    configs: str = typer.Option("G0,G1,G2,G3", "--configs", help="Comma-separated G-levels to run, each needing applications/<app>/config/<level>_config.yaml."),
+    repetitions: int = typer.Option(1, "--repetitions", help="Repetitions per config."),
+    trace_dir: str = typer.Option("traces", "--trace-dir", help="Directory for per-repetition unified-trace files."),
+) -> None:
+    """
+    Run a frozen scenario across one or more autonomy configurations (design doc §8).
+
+    Builds and starts each config's SimPN Simulation Runtime Service in turn (one at
+    a time, stopped before the next), runs the requested repetitions through the
+    real FlowAgent, and prints a goal/decision-utility/intervention-F1/cycle-time
+    comparison table across configs.
+    """
+    from cuga_flo.scenarios.cli import run as run_scenario_matrix
+
+    raise typer.Exit(run_scenario_matrix(app_name, scenario_path, configs.split(","), repetitions, trace_dir))
+
+
 @app.command("patch-host")
 def patch_host(
     check: bool = typer.Option(False, "--check", help="Exit non-zero if patches are not applied."),

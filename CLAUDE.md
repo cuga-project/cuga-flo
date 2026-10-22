@@ -65,3 +65,15 @@ copy under `build/simpn/<app-name>/` matters at runtime, so re-run step 1 after 
 
 To capture a unified execution trace for `cuga-flo evaluate`, set `CUGA_FLO_TRACE_PATH`
 before step 3; see `docs/README-SIMPN.md`.
+
+To run a frozen scenario across the G0-G3 autonomy ladder instead of a single manual
+session, skip all three steps above — `cuga-flo run-scenario` manages the service's
+build/start/stop itself:
+
+```bash
+source .venv/bin/activate
+cuga-flo run-scenario <app-name> applications/<app-name>/scenarios/<scenario>.yaml \
+    --configs G0,G1,G2,G3 --repetitions 3
+```
+
+See `docs/README-SIMPN.md`'s "Scenarios and the scenario runner" section.

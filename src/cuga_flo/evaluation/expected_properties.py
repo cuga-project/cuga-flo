@@ -75,12 +75,21 @@ def hook_intervened(run: TraceRun, hook_id: str) -> bool | None:
 
 
 def intervention_counts(run: TraceRun, expected: InterventionExpectation) -> dict[str, int]:
-    """TP/FP/FN/TN per design doc §13.7, over every hook that actually fired."""
+    """
+    TP/FP/FN/TN per design doc §13.7, over `required | fired` — not just `fired`.
+
+    Found live: a hook that was required but never fired *because this G-level's
+    config has no hooks at all* (G0/G1/G2 all have zero hooks registered) used to
+    contribute nothing — the loop only ever considered hooks that actually fired,
+    so "a required intervention never even had the chance to happen" silently
+    scored as `None` instead of a false negative. Iterating `required | fired`
+    means a required-but-absent hook still counts.
+    """
     required = set(expected.required_after)
     fired = {f["bpmn_element_id"] for f in run.hook_firings()}
 
     counts = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
-    for hook_id in fired:
+    for hook_id in required | fired:
         intervened = hook_intervened(run, hook_id)
         required_here = hook_id in required
         if required_here and intervened:
@@ -95,23 +104,48 @@ def intervention_counts(run: TraceRun, expected: InterventionExpectation) -> dic
 
 
 def precision_recall_f1(counts: dict[str, int]) -> tuple[float | None, float | None, float | None]:
+    """
+    `None` only in the fully vacuous case (nothing required, nothing happened —
+    `tp == fp == fn == 0`, no intervention story to evaluate). Otherwise zero
+    positive predictions scores 0.0, not `None` — found live: a required
+    intervention that never fired at all (G0's config has no hooks — see
+    `intervention_counts`) has `tp = fp = 0`, which made precision `None` by the
+    0/0-is-undefined convention, and that `None` precision propagated into F1 even
+    though recall was unambiguously 0.0 — reporting "no information" about a run
+    that in fact completely missed a required intervention.
+    """
     tp, fp, fn = counts["tp"], counts["fp"], counts["fn"]
-    precision = tp / (tp + fp) if (tp + fp) else None
-    recall = tp / (tp + fn) if (tp + fn) else None
-    f1 = (
-        2 * precision * recall / (precision + recall)
-        if precision is not None and recall is not None and (precision + recall) > 0
-        else None
-    )
+    if tp == 0 and fp == 0 and fn == 0:
+        return None, None, None
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
     return precision, recall, f1
 
 
 def goal_achieved(run: TraceRun, expected: ExpectedProperties) -> bool:
+    """
+    Found live, not hypothetically: a run can satisfy every `must`/`must_not`/
+    `eventually` predicate (the process genuinely completed, the credit check ran)
+    while still taking a route `acceptable_routes` doesn't recognize at all — e.g.
+    G0 rejecting a well-qualified applicant because it has no real scoring
+    mechanism. None of those three predicate lists says anything about which
+    *route* was taken, so without this check `goal_achieved` would report success
+    on exactly the failure the scenario was designed to catch. When
+    `acceptable_routes` is declared, the chosen route must be in it (utility > 0)
+    for the goal to count as achieved — not just that the process ended cleanly.
+    """
     if any(check_predicate(p, run) for p in expected.must_not):
         return False
     if not all(check_predicate(p, run) for p in expected.must):
         return False
-    return all(check_predicate(p, run) for p in expected.eventually)
+    if not all(check_predicate(p, run) for p in expected.eventually):
+        return False
+    if expected.acceptable_routes:
+        utility = decision_utility(run, expected)
+        if utility is None or utility <= 0:
+            return False
+    return True
 
 
 def decision_utility(run: TraceRun, expected: ExpectedProperties) -> float | None:

@@ -1,0 +1,31 @@
+# A qualifying applicant, no perturbations. The point of running this across
+# G0-G3 is the gap it reveals: G0 has no mechanism to compute a real credit score
+# (see G0_config.yaml's comment), so it always rejects even a genuinely strong
+# applicant — G1+ (a real Task Agent) correctly approves.
+scenario_id: S01
+description: >
+  Nominal case: a well-qualified applicant with clean credit history and a small
+  loan relative to income. No perturbations — this isolates the effect of task
+  autonomy (G0 vs G1+) from everything else.
+
+initial_state:
+  process_variables:
+    applicant_name: "John Doe"
+    applicant_id: "A12345"
+    loan_amount: 1000
+    credit_history: "Excellent payment history, no defaults"
+    income: 75000
+    employment_years: 5
+
+perturbations: []
+
+expected_properties:
+  eventually:
+    - case_resolved
+  must:
+    - Activity_0oydey5  # credit check ran
+  must_not: []
+  acceptable_routes:
+    Flow_0ybszcv: 1.0  # approve is the only acceptable route for this applicant
+  intervention:
+    required_after: []  # no regulatory override expected
