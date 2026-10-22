@@ -48,12 +48,22 @@ def check_predicate(name: str, run: TraceRun) -> bool:
     return name in run.execution_path()
 
 
-def chosen_flow_id(run: TraceRun) -> str | None:
-    """The flow id of this run's (last) gateway resolution, if any."""
-    resolutions = run.gateway_resolutions()
-    if not resolutions:
-        return None
-    return resolutions[-1]["payload"].get("chosen_flow")
+def chosen_flow_id(run: TraceRun, acceptable_routes: dict[str, float]) -> str | None:
+    """
+    The flow id of the gateway resolution `acceptable_routes` is actually about.
+
+    A process typically has more than one gateway — e.g. an agentic decision gateway
+    plus a plain downstream merge gateway (loan_approval_simpn has exactly this
+    shape). Taking "the last gateway resolution in the trace" would pick whichever
+    one happens to run last, not the one the oracle cares about — found live, not
+    hypothetically, running this very fixture against a real trace. Instead, return
+    the last resolution whose chosen flow is actually a key in `acceptable_routes`.
+    """
+    for resolution in reversed(run.gateway_resolutions()):
+        flow_id = resolution["payload"].get("chosen_flow")
+        if flow_id in acceptable_routes:
+            return flow_id
+    return None
 
 
 def hook_intervened(run: TraceRun, hook_id: str) -> bool | None:
@@ -107,7 +117,7 @@ def goal_achieved(run: TraceRun, expected: ExpectedProperties) -> bool:
 def decision_utility(run: TraceRun, expected: ExpectedProperties) -> float | None:
     if not expected.acceptable_routes:
         return None
-    flow_id = chosen_flow_id(run)
+    flow_id = chosen_flow_id(run, expected.acceptable_routes)
     if flow_id is None:
         return None
     return expected.acceptable_routes.get(flow_id)

@@ -286,6 +286,25 @@ def test_evaluator_goal_not_achieved_when_must_not_predicate_holds(process, mcp_
     assert card.goal_achieved is False
 
 
+def test_decision_utility_picks_the_gateway_the_oracle_is_about():
+    """Found running a real live trace: loan_approval_simpn has an agentic decision
+    gateway AND a plain downstream merge gateway. chosen_flow_id used to take
+    whichever gateway resolved *last* in the trace — the merge gateway, not the
+    decision one — so decision_utility silently came back None even though the
+    decision gateway's chosen flow was a perfectly good match in acceptable_routes."""
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="GATEWAY_RESOLVED", bpmn_element_id="DecisionGateway", payload={"chosen_flow": "Approve"})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="GATEWAY_RESOLVED", bpmn_element_id="MergeGateway", payload={"chosen_flow": "MergeFlow"})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End", payload={})
+    sink.close()
+
+    expected = ExpectedProperties.model_validate({"acceptable_routes": {"Approve": 1.0, "Reject": 0.6}})
+    card = evaluate(path, expected=expected)
+    assert card.decision_utility == 1.0
+
+
 def test_trace_run_loads_only_the_requested_run_id():
     path = tempfile.mktemp()
     sink = simpn_trace.TraceSink(path)

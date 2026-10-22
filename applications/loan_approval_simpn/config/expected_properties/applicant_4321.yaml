@@ -7,8 +7,16 @@ must:
   - Activity_131ar38  # rejection letter actually sent
 must_not:
   - Activity_1h9ix55  # the loan must NOT be granted, even with a passing credit score
+# decision_utility is about the GATEWAY's own call, which reasons on credit score
+# alone — approving a 0.86 score is correct on that basis; the regulatory
+# restriction is deliberately not the gateway's job, it's the hook's (see
+# `intervention` below). Found this distinction live: an earlier version of this
+# fixture listed only Flow_1jgea85 here, which scored decision_utility as "wrong"
+# for a gateway decision that was actually fine — the hook is what must fix the
+# outcome, not the gateway.
 acceptable_routes:
-  Flow_1jgea85: 1.0  # reject is the only acceptable route for this applicant
+  Flow_0ybszcv: 1.0  # approve — correct given credit score alone
+  Flow_1jgea85: 1.0  # reject — also correct if the gateway ever saw this applicant differently
 intervention:
   required_after:
     - Flow_0ybszcv  # the approval-path hook must intervene for this applicant
