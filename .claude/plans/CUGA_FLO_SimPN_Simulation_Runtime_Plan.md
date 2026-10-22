@@ -1,16 +1,23 @@
-> **Status: implemented and verified** on branch `cuga-flo-sim`.
+> **Status: implemented and verified** on branch `cuga-flo-sim`. All four design-doc
+> pieces this plan ever scoped are now built, each in a form matched to what the
+> available data/dependencies actually justify:
 > - **Milestone 1 — infrastructure** (commits `c98fcfd`, `77b45c2`): the adapter,
 >   G0-G3, the unified trace, the deterministic evaluator.
 > - **Milestone 2 — scenarios, perturbations, the G0-G3 runner** (commits `39be97a`
->   and the schema-relocation `8eae91c`): see the new section below. Live-verified
->   across the full G0-G3 ladder with real LLM calls, not just Milestone 1's two
->   single-config runs.
+>   and the schema-relocation `8eae91c`): live-verified across the full G0-G3
+>   ladder with real LLM calls.
+> - **Milestone 3 — LLM-assisted authoring + comparative analysis** (commit
+>   `fc51431`): see the new section at the end. Live-verified; comparative analysis
+>   is deliberately descriptive (aggregates + ablation + CSV export), not a fitted
+>   mixed-effects model — see that section for exactly why and what would need to
+>   change to build one.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
-> Prosimos) and for everything through the G0-G3 comparative matrix. What remains
-> genuinely deferred, per those two docs, is narrower now: LLM-assisted scenario
-> authoring and the statistical/mixed-effects analysis layer. See
+> Prosimos) and for everything both docs described. What's left unbuilt now is
+> narrower than either doc anticipated: a fitted mixed-effects/GLMM model and a
+> severity dimension on the scenario schema (needed for the `AutonomyLevel ×
+> PerturbationSeverity` interaction specifically) — see Milestone 3. See
 > `docs/README-SIMPN.md` for the as-built integration guide and known gaps.
 
 # CUGA FLO × SimPN — Simulation Runtime Service (Infrastructure Milestone)
@@ -336,3 +343,85 @@ was genuine, not accidental). G0 and G3 reach the same correct terminal outcome 
 entirely different reasons, and the evaluator correctly tells them apart — the
 precise "progressively broader autonomy improves governance" claim design doc §10
 is built around, now demonstrated end to end rather than asserted.
+
+---
+
+## Milestone 3 — LLM-Assisted Scenario Authoring and Comparative Analysis
+
+Closes the last two items design doc §5 and §16 ever named — the only two Milestone
+2 left deferred.
+
+### LLM-assisted scenario authoring (§5) — offline, once, schema+consistency checked
+
+`cuga_flo/scenarios/author.py`, driven by `cuga-flo author-scenario <app> <id>
+--idea "<natural language>"`: builds a prompt from this app's **real** element/flow/
+hook ids and declared variables (`load_app_context`, reusing `BPMNParser`/
+`FlowConfig` — the exact same parsing `scripts/build_simpn_app.sh` already does, so
+the LLM's context can never drift from what the engine actually sees), asks a
+`CugaAgent` (same `LLMManager`/prompt-JSON-extraction conventions already
+established by `flow_agent.py`'s `_llm_hook_decision`/`_extract_initial_variables`
+— no new ad hoc LLM-calling pattern) to produce a structured scenario, validates it
+against the real `Scenario` Pydantic schema, then runs `check_consistency` — a
+second validation pass beyond Pydantic's structural check, confirming every
+element/flow/hook id the LLM used is real for this app, not invented. Matches the
+design doc's own pipeline exactly: NL idea → LLM → structured scenario → schema/
+consistency validation → **optional researcher review** → frozen scenario — the
+tool prints (and optionally writes) a draft; nothing is "frozen" until a human
+reviews and saves it.
+
+**Found live, not hypothetically, and fixed in the same session:** the first prompt
+version gave the LLM only variable *names and defaults* — `credit_score: 0.0` — not
+what range that default implies or whether the variable is even a real input. The
+LLM invented `credit_score: 780.0` (a FICO-scale value) for an app whose own task
+policy defines that field as 0.0-1.0. Schema-valid, consistency-valid (it's a real
+variable name), semantically wrong — and the gap was specifically that
+`credit_score` is a Task Agent **output**, normally overwritten the moment
+`Activity_0oydey5` runs, so there was never a good reason to give it an initial
+value at all. Fix: `load_app_context` now also exposes `output_variables` (derived
+from every task's `output_mapping`, already present in `cfg.tasks_config` — no new
+data needed), and the prompt instructs the LLM to leave those out of
+`initial_state` rather than inventing a value. Re-run with the same idea
+immediately after: `credit_score` no longer appears in the generated scenario at
+all. This is exactly the sequence the design doc's "optional researcher review"
+step exists for — a live run surfacing a real gap, fixed, re-verified live again —
+not a hypothetical risk noted in passing.
+
+### Comparative analysis (§16) — descriptive aggregation, not a fitted model
+
+`cuga_flo/scenarios/analysis.py`, wired into `run-scenario`'s existing output:
+per-config aggregates (Goal Achievement Rate, mean decision utility, mean
+intervention F1, mean cycle time) and the G0→G1→G2→G3 ΔGAR ablation (§16.4),
+printed automatically; `--csv PATH` writes one row per `(config, repetition)` —
+literally §16's own comparison table (`Scenario | Group | Run | Goal | Recovery |
+Cycle time | Cost | DU | Intervention correct | Violations | Tokens`, modulo column
+names matching the real `Scorecard` fields) — ready to load into pandas/R/
+statsmodels.
+
+**Deliberately short of §16.1-§16.3** — a fitted mixed-effects/GLMM model for
+binary and continuous/count outcomes, and the `AutonomyLevel × PerturbationSeverity`
+interaction test. Two real reasons, not just caution: (1) the design doc itself
+qualifies §16.1/§16.2 with "where sample size permits," and a benchmark run with
+N=1-3 repetitions per cell — exactly what this tool produces today — isn't that;
+fitting a GLMM on data that thin would manufacture false statistical confidence,
+not provide real insight. (2) the `PerturbationSeverity` half of §16.3's interaction
+needs a severity dimension the scenario schema doesn't carry at all — scenarios
+here are qualitative ("a regulatory restriction applies" / "a service is slow"),
+not graded. The CSV export is the deliberate handoff point: once a scenario suite
+with real repetition counts (and, if wanted, a severity field added to the schema)
+exists, fitting a real model over that CSV externally is the right next step — not
+something to half-build now on data too thin to support it.
+
+### Verification
+
+- 10 new tests (`tests/test_scenarios.py`): `_extract_json`/`check_consistency`
+  unit tests, `load_app_context` against the real `loan_approval_simpn` app (no LLM
+  — pure `BPMNParser`/`FlowConfig` parsing), `author_scenario` with a monkeypatched
+  LLM call (both a clean case and one surfacing invented ids as warnings), and
+  `analysis.py`'s aggregate/ablation/CSV functions against hand-built `Scorecard`s.
+  50/50 passing across the full suite.
+- Live: `cuga-flo author-scenario loan_approval_simpn S99 --idea "..."` against the
+  real demo app with a real LLM call, twice (before and after the
+  `output_variables` fix) — see above.
+- Live: `cuga-flo run-scenario ... --csv PATH` against a free (no-LLM, G0-only)
+  run — comparison table, aggregate table, ablation message, and CSV all verified
+  correct, including the CSV's exact column/row shape.
