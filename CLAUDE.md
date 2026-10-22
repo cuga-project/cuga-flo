@@ -58,10 +58,10 @@ cuga-flo start <app-name>
 
 Then open http://127.0.0.1:8001 and give it an applicant.
 
-Step 1 needs repeating after a BPMN/config change (it re-dumps the process model); it
-does not need repeating after editing `simpn_parameters.yaml` alone — only the staged
-copy under `build/simpn/<app-name>/` matters at runtime, so re-run step 1 after that too.
-`loan_approval_simpn` is the worked example.
+Step 1 needs repeating after any change to the BPMN model, the app config, or
+`simpn_parameters.yaml` — the service reads only the staged copy under
+`build/simpn/<app-name>/`, which step 1 (re-)creates. `loan_approval_simpn` is the
+worked example.
 
 To capture a unified execution trace for `cuga-flo evaluate`, set `CUGA_FLO_TRACE_PATH`
 before step 3; see `docs/README-SIMPN.md`.
