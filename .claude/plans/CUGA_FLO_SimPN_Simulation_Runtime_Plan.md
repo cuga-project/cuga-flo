@@ -1,10 +1,16 @@
-> **Status: implemented and verified** on branch `cuga-flo-sim` (commits `c98fcfd`,
-> `77b45c2`). Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
+> **Status: implemented and verified** on branch `cuga-flo-sim`.
+> - **Milestone 1 — infrastructure** (commits `c98fcfd`, `77b45c2`): the adapter,
+>   G0-G3, the unified trace, the deterministic evaluator.
+> - **Milestone 2 — scenarios, perturbations, the G0-G3 runner** (commits `39be97a`
+>   and the schema-relocation `8eae91c`): see the new section below. Live-verified
+>   across the full G0-G3 ladder with real LLM calls, not just Milestone 1's two
+>   single-config runs.
+>
+> Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
-> Prosimos) and the infrastructure milestone (adapter + G0-G3 + trace + evaluator);
-> those two docs' scenario/semantic-world/statistical-analysis layers remain the
-> accurate description of what's still deferred. Verified with two live runs against
-> a real LLM (`loan_approval_simpn`, normal applicant and applicant `"4321"`) — see
+> Prosimos) and for everything through the G0-G3 comparative matrix. What remains
+> genuinely deferred, per those two docs, is narrower now: LLM-assisted scenario
+> authoring and the statistical/mixed-effects analysis layer. See
 > `docs/README-SIMPN.md` for the as-built integration guide and known gaps.
 
 # CUGA FLO × SimPN — Simulation Runtime Service (Infrastructure Milestone)
@@ -89,6 +95,12 @@ This mirrors Kogito's shape exactly: an out-of-process service that blocks a sin
 - LLM-assisted scenario authoring and the statistical/mixed-effects analysis layer.
 
 These remain the eventual destination but require the scenario/semantic-world layer this pass doesn't build; they're natural next milestones once this infrastructure is in place.
+
+> **As-built update:** everything in this "deferred" list except the last line
+> (LLM-assisted authoring, statistical analysis) was built in Milestone 2 — see the
+> new section below. `perturbation_recovered` stays `not_yet_computable` for the
+> documented reason even there: it compares a perturbed run against a nominal one,
+> and nothing yet designates which runs form such a pair.
 
 ---
 
@@ -198,3 +210,129 @@ New `tests/test_simpn_adapter.py`, following the conventions in `tests/test_remo
 > also caught a real bug (`decision_utility` picking the wrong gateway's resolution
 > when a process has more than one) and a mismatch in the `applicant_4321` oracle
 > fixture itself — both fixed, with a regression test added for the former.
+
+---
+
+## Milestone 2 — Scenarios, Perturbations, and the G0–G3 Runner
+
+Implements the rest of design doc §5–§8 beyond the oracle Milestone 1 already built:
+the scenario DSL's `initial_state`/`perturbations`, the semantic world, G0–G3
+autonomy-ladder config variants, and a scenario runner executing N repetitions
+across configs. LLM-assisted scenario authoring (§5's natural-language-to-YAML
+compiler) and the statistical/mixed-effects analysis layer (§16) remain deferred —
+narrower now than Milestone 1 left it.
+
+### The semantic world needed zero engine changes
+
+The design doc frames `W_semantic` (§4.2) as a layer the engine has to support.
+In practice it needed none: `initial_state.semantic` and every `semantic_change`
+just become `semantic.<dotted.key>` entries in `process_variables` — ordinary data
+any task/gateway/hook policy can already read. `cuga_flo.scenarios.schema`'s
+`InitialState.semantic`/`Perturbation.semantic_change` are flat dicts (matching the
+design doc's own `services.alternative_verification.available: true`-style flat
+dotted-key YAML, not nested structure), flattened by
+`cuga_flo.scenarios.runner.build_run_inputs` before the run starts.
+
+### Perturbation injection — bounded, not full BPS fidelity
+
+`src/cuga_flo/adapters/simpn/runtime/perturbations.py` (new, stdlib-only — the
+runtime service still cannot import `cuga_flo`, see its package docstring) is
+checked by `engine.py` at every task/gateway/hook/end-event's enter and complete
+point. Only `activities.<element_id>.duration_multiplier` has a real effect,
+consistent with Milestone 1's documented one-`DecProblem`-per-instance scope (no
+cross-case resource contention to perturb) — anything else under `bps_change`
+(design doc §6.1's `resources.X.capacity`, etc.) is recorded as
+`unsupported_bps_keys` in a `PERTURBATION_APPLIED` trace event, never silently
+applied or dropped. A synthetic `when: "__start__"` entry (built from
+`initial_state.bps`) applies once before the first token is seeded; real
+`perturbations:` entries apply at the matching element's `enter`/`complete` point,
+each at most once per case.
+
+**Wire mechanism:** perturbations ride into the Simulation Runtime Service as one
+more process variable — `cugaPerturbations`, JSON-encoded — via the exact mechanism
+`cugaMcpUrl`/`cugaProcessKey`/`cugaTracePath` already use. No change to
+`MCPFlowBridge`/`SimPNProxy`/the wire format was needed.
+
+### G0–G3 config variants
+
+One config file per level, `G0_config.yaml` .. `G3_config.yaml`, under the app's
+`config/`, sharing the same BPMN model and policies — only `tasks:`/`gateways:`/
+`hooks:` differ (`loan_approval_simpn`'s four variants are the worked example). G0
+strips the task to `mode: native` and the gateway to a plain condition; since no
+conventional/deterministic credit-scoring formula exists in this demo app,
+`credit_score` never leaves its 0.0 default under G0 — the gateway's
+`${credit_score} > 0.6` condition is always false, so **G0 always rejects, for
+every applicant, regardless of scenario.** This was designed as the deliberate
+experimental point (a conventional workflow with no real scoring mechanism cannot
+adapt to who the applicant is), not discovered as a side effect — but its full
+consequence (G0 "succeeding" on a regulatory-restriction scenario by accident,
+rather than by oversight) only became visible once run live — see below.
+
+### The scenario runner manages the service lifecycle itself, one repetition per subprocess
+
+`cuga_flo.scenarios.runner` builds and starts each G-level's service in turn
+(`scripts/build_simpn_app.sh --config ...`, then its generated `run.sh`), one at a
+time on one reused port, stopped before the next — unattended N-repetitions-×-4-
+configs is the point, so the manual three-terminal workflow `CLAUDE.md` documents
+for a single interactive run doesn't fit.
+
+**Found necessary, not assumed:** each repetition runs in its own subprocess
+(`cuga_flo/scenarios/_worker.py`), not a loop of `asyncio.run()` calls in the
+runner's own process. Looping `FlowAgent.invoke()` calls collides on the MCP
+callback port — `MCPFlowBridge._ensure_http_server` guards per-bridge, not
+per-port, a gap `docs/README-KOGITO.md`'s "Known gaps" already flagged for "two
+`FlowAgent`s in one process" — and the scenario runner's repetitions are the first
+thing in this codebase to actually trigger it in practice. A fresh process per
+repetition also means no other module-level state can leak between repetitions
+either, which is the right isolation for a benchmark runner regardless of the port
+issue specifically.
+
+New `cuga-flo run-scenario <app> <scenario.yaml> --configs G0,G1,G2,G3
+--repetitions N` command.
+
+### Two more real bugs found by running this live, not by any mocked test
+
+- **`goal_achieved` ignored route acceptability entirely.** A run could satisfy
+  every `must`/`must_not`/`eventually` predicate while taking a route nobody
+  declared acceptable — exactly G0 rejecting a well-qualified applicant (scenario
+  S01) for lack of a real scoring mechanism. Fixed: when `acceptable_routes` is
+  declared, the chosen route must be in it (`decision_utility > 0`) for the goal to
+  count as achieved.
+- **`intervention_counts` only iterated over hooks that actually fired.** A
+  required intervention that never had a hook to fire through *at all* (G0–G2's
+  configs register zero hooks) silently contributed nothing instead of a false
+  negative — `intervention_recall`/`intervention_f1` came back `None` ("no
+  information") on a run that in fact completely missed a required intervention.
+  Fixed: iterate `required | fired`, not just `fired`; and `precision_recall_f1`
+  now only returns `None` in the fully vacuous case (`tp == fp == fn == 0`) —
+  otherwise zero positive predictions scores `0.0`, matching the standard
+  precision/recall convention for "no positive predictions were made."
+
+Both fixed with regression tests; both are exactly the kind of gap a live,
+multi-config run surfaces that a single-scenario mocked test cannot, because they
+only show up when a required intervention's absence has to be scored, not just its
+presence.
+
+### Verification result — the full G0–G3 differentiation story, confirmed live
+
+`cuga-flo run-scenario loan_approval_simpn
+applications/loan_approval_simpn/scenarios/S02-regulatory-restriction.yaml
+--configs G0,G1,G2,G3 --repetitions 1`, real LLM calls throughout:
+
+| Config | goal_achieved | decision_utility | intervention_f1 | cycle_s |
+|---|---|---|---|---|
+| G0 | `True` | 1.0 | **0.0** | 0.0 |
+| G1 | **`False`** | 1.0 | 0.0 | 20.0 |
+| G2 | **`False`** | 1.0 | 0.0 | 12.1 |
+| G3 | `True` | 1.0 | **1.0** | 17.5 |
+
+Exactly the story this scenario was designed to tell: G0 rejects applicant "4321"
+by accident (no real scoring at all — `intervention_f1=0.0` correctly shows no
+governance happened); G1/G2 compute a real, correct credit score and — with no
+hook to catch the restriction — wrongly grant the loan (`goal_achieved=False`); G3
+computes the same real score but its hook's own LLM reasoning catches the
+restriction and overrides to rejection (`intervention_f1=1.0` proves the oversight
+was genuine, not accidental). G0 and G3 reach the same correct terminal outcome for
+entirely different reasons, and the evaluator correctly tells them apart — the
+precise "progressively broader autonomy improves governance" claim design doc §10
+is built around, now demonstrated end to end rather than asserted.
