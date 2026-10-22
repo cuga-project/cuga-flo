@@ -1,0 +1,12 @@
+# Oracle for a normal applicant (no regulatory override) — design doc §6.3, minus
+# initial_state/perturbations (that layer is still deferred; see the plan's Scope).
+eventually:
+  - case_resolved
+must:
+  - Activity_0oydey5  # credit check ran
+must_not: []
+acceptable_routes:
+  Flow_0ybszcv: 1.0  # approve
+  Flow_1jgea85: 1.0  # reject — either is a legitimate credit-score outcome here
+intervention:
+  required_after: []  # no regulatory override expected

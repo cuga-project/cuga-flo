@@ -1,1 +1,1 @@
-"""Pluggable workflow-engine adapters (Flowable, Apache KIE / Kogito)."""
+"""Pluggable workflow-engine adapters (Flowable, Apache KIE / Kogito, SimPN)."""

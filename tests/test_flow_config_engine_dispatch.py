@@ -52,6 +52,18 @@ def test_flowable_builds_flowable_proxy():
     bridge.register_kogito_engine.assert_not_called()
 
 
+def test_simpn_builds_simpn_proxy():
+    with patch("cuga_flo.adapters.simpn.proxy.SimPNProxy") as proxy_cls:
+        bridge = _dispatch("simpn")
+
+    proxy_cls.assert_called_once()
+    bridge.register_simpn_engine.assert_called_once()
+    # Like Kogito, SimPN must not be wired through the Flowable path — that one
+    # gates the dead _realize_hook_action REST redirect.
+    bridge.register_flowable_engine.assert_not_called()
+    bridge.register_kogito_engine.assert_not_called()
+
+
 def test_langgraph_builds_langgraph_engine():
     with patch(
         "cuga_flo.engine.langgraph_engine.LangGraphWorkflowEngine"

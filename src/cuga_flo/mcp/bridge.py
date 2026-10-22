@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from cuga_flo.engine.process_registry import ProcessRegistry
     from cuga_flo.adapters.flowable.proxy import FlowableProxy
     from cuga_flo.adapters.kogito.proxy import KogitoProxy
+    from cuga_flo.adapters.simpn.proxy import SimPNProxy
 
 
 class MCPFlowBridge:
@@ -51,6 +52,10 @@ class MCPFlowBridge:
         # Kept separate from _proxy: that one gates the Flowable-only
         # _realize_hook_action path, which Kogito must not be dragged into.
         self._kogito_proxy: "KogitoProxy | None" = None
+        # Also kept separate from _proxy: the SimPN runtime service realizes hook
+        # actions entirely in-process (same reasoning as Kogito), so _realize_hook_action
+        # must not be dragged into it either.
+        self._simpn_proxy: "SimPNProxy | None" = None
         self._http_started = False
         logger.debug(f"MCPFlowBridge created: {name!r}")
 
@@ -263,6 +268,69 @@ class MCPFlowBridge:
         self._mcp.tool(name="run_process")(run_process)
         logger.info(
             f"MCPFlowBridge: registered KogitoProxy run_process tool "
+            f"(MCP HTTP callback on port {callback_port})"
+        )
+
+    def register_simpn_engine(
+        self,
+        proxy: "SimPNProxy",
+        process_id: "str | None" = None,
+        callback_port: int = 8090,
+        callback_host: str = "host.docker.internal",
+    ) -> None:
+        """
+        Register a SimPNProxy as the run_process MCP tool and expose the MCP server over
+        HTTP so the standalone Simulation Runtime Service can call back into CUGA FLO
+        (execute_task / route_gateway / evaluate_hook / complete_process) while a
+        simulated instance runs.
+
+        Modeled directly on register_kogito_engine: like Kogito, the SimPN runtime
+        service compiles its process at build time (scripts/build_simpn_app.sh), so there
+        is no `deploy` here either, and hook-action realization (skip_to/terminate/...)
+        happens entirely inside the service's own Petri-net token routing — never via a
+        REST callback through this bridge — so _simpn_proxy is never passed to
+        _realize_hook_action.
+
+        Args:
+            proxy: SimPNProxy client.
+            process_id: process id to start in the running service; defaults to the BPMN
+                process id.
+            callback_port: Port the MCP HTTP server listens on for service callbacks.
+            callback_host: Host the service uses to reach back. Default suits a
+                containerised service; use "localhost" when running the service directly
+                on the host.
+
+        Tool registered:
+          run_process(process_key, initial_inputs) → dict
+        """
+        import os
+
+        self._simpn_proxy = proxy
+
+        async def run_process(process_key: str, initial_inputs: dict) -> dict:
+            """Start a SimPN instance; the service calls complete_process via MCP HTTP on completion."""
+            await self._ensure_http_server(callback_port)
+
+            bpmn = self._registry.get_bpmn_process(process_key)
+            simpn_id = process_id or bpmn.id
+
+            start_vars = {
+                **initial_inputs,
+                "cugaProcessKey": process_key,
+                "cugaMcpUrl": f"http://{callback_host}:{callback_port}/mcp",
+                # Unset unless the operator opts into tracing (see cuga_flo.trace) —
+                # the runtime service treats a missing/empty path as "don't write."
+                "cugaTracePath": os.environ.get("CUGA_FLO_TRACE_PATH", ""),
+            }
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None, lambda: proxy.start_process(simpn_id, variables=start_vars)
+            )
+            return {}
+
+        self._mcp.tool(name="run_process")(run_process)
+        logger.info(
+            f"MCPFlowBridge: registered SimPNProxy run_process tool "
             f"(MCP HTTP callback on port {callback_port})"
         )
 

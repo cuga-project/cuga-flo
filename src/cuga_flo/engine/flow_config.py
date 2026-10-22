@@ -616,6 +616,16 @@ class FlowConfig:
                 callback_port=engine_cfg.get("callback_port", 8090),
                 callback_host=engine_cfg.get("callback_host", "host.docker.internal"),
             )
+        elif engine_type == "simpn":
+            from cuga_flo.adapters.simpn.proxy import SimPNProxy
+
+            proxy = SimPNProxy(base_url=engine_cfg.get("url"))
+            bridge.register_simpn_engine(
+                proxy,
+                process_id=engine_cfg.get("process_id"),
+                callback_port=engine_cfg.get("callback_port", 8090),
+                callback_host=engine_cfg.get("callback_host", "host.docker.internal"),
+            )
         elif engine_type == "langgraph":
             from cuga_flo.engine.langgraph_engine import LangGraphWorkflowEngine
 
@@ -623,7 +633,7 @@ class FlowConfig:
         else:
             raise ValueError(
                 f"Unknown workflow_engine type {engine_type!r} in {self.config_path}. "
-                f"Expected one of: langgraph, flowable, kogito."
+                f"Expected one of: langgraph, flowable, kogito, simpn."
             )
 
         return flow_agent

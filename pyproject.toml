@@ -53,6 +53,7 @@ where = ["src"]
     "adapters/kogito/runtime/*.java",
     "adapters/kogito/runtime/*.template",
     "adapters/kogito/runtime/*.bpmn",
+    "adapters/simpn/runtime/requirements.txt",
 ]
 
 [tool.pytest.ini_options]

@@ -34,3 +34,34 @@ Only step 1 needs repeating after a BPMN change — the yaml and policies are re
 
 A Tomcat-styled 404 means the Kogito service is not up and the request reached Flowable on
 8080 instead.
+
+# Running a SimPN app
+
+Apps using `workflow_engine: {type: simpn}` need their standalone Simulation Runtime
+Service built and running before CUGA-FLO starts. Unlike Kogito, this service isn't a
+third-party engine — it's built from this repo's own code (`src/cuga_flo/adapters/simpn/`)
+into its own isolated venv, kept separate from CUGA FLO's main venv because `simpn` pulls
+in a full GUI/plotting stack (PyQt6, pygame, matplotlib) that has no business there.
+Three steps, substituting the app directory name under `applications/`:
+
+```bash
+# 1. Build the service from the app dir (one-off, or after editing the BPMN/config)
+./scripts/build_simpn_app.sh <app-name>
+
+# 2. Start it — leave this running in its own terminal
+build/simpn/<app-name>/run.sh
+
+# 3. In another terminal, start CUGA-FLO
+source .venv/bin/activate
+cuga-flo start <app-name>
+```
+
+Then open http://127.0.0.1:8001 and give it an applicant.
+
+Step 1 needs repeating after a BPMN/config change (it re-dumps the process model); it
+does not need repeating after editing `simpn_parameters.yaml` alone — only the staged
+copy under `build/simpn/<app-name>/` matters at runtime, so re-run step 1 after that too.
+`loan_approval_simpn` is the worked example.
+
+To capture a unified execution trace for `cuga-flo evaluate`, set `CUGA_FLO_TRACE_PATH`
+before step 3; see `docs/README-SIMPN.md`.

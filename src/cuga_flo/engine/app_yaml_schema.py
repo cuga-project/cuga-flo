@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-WorkflowEngineType = Literal["langgraph", "flowable", "kogito"]
+WorkflowEngineType = Literal["langgraph", "flowable", "kogito", "simpn"]
 
 TaskMode = Literal["task_agent", "native"]
 GatewayMode = Literal["decision_agent", "native"]
@@ -35,7 +35,8 @@ class WorkflowEngineConfig(BaseModel):
     password: Optional[str] = None
     deploy: bool = False
     process_definition_key: Optional[str] = None
-    # kogito only — Kogito compiles BPMN in at build time, so there is no `deploy`
+    # kogito/simpn only — both compile the process into their service at build time
+    # (scripts/build_kogito_app.sh, scripts/build_simpn_app.sh), so there is no `deploy`
     # equivalent; process_id names an already-built process in the running service.
     process_id: Optional[str] = None
     callback_port: int = 8090

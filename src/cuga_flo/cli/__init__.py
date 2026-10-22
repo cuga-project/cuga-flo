@@ -28,6 +28,20 @@ def start(
     run(app_name, host=host, sandbox=sandbox)
 
 
+@app.command()
+def evaluate(
+    trace_path: str = typer.Argument(..., help="Unified-trace .jsonl file (set CUGA_FLO_TRACE_PATH before `cuga-flo start` to produce one)."),
+    expected: Optional[str] = typer.Option(
+        None, "--expected", help="expected_properties YAML — unlocks goal_achieved/decision_utility/intervention_f1."
+    ),
+    run_id: Optional[str] = typer.Option(None, "--run-id", help="Required if the file holds more than one run."),
+) -> None:
+    """Print the deterministic-evaluator scorecard for one run's unified trace."""
+    from cuga_flo.evaluation.cli import run as run_evaluate
+
+    raise typer.Exit(run_evaluate(trace_path, expected, run_id))
+
+
 @app.command("patch-host")
 def patch_host(
     check: bool = typer.Option(False, "--check", help="Exit non-zero if patches are not applied."),

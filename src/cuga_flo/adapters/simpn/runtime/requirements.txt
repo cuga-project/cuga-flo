@@ -1,0 +1,6 @@
+# Installed into the Simulation Runtime Service's OWN isolated venv by
+# scripts/build_simpn_app.sh — never into CUGA FLO's main venv. `simpn` pulls in a
+# full GUI/plotting stack (PyQt6, pygame, matplotlib, python-igraph) that has no
+# business in CUGA FLO's own process; see src/cuga_flo/adapters/simpn/__init__.py.
+simpn>=1.10
+pyyaml>=6.0

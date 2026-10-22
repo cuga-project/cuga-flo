@@ -1,0 +1,82 @@
+# Loan Approval Process — standalone SimPN Simulation Runtime Service
+#
+# Same process, same policies, different execution engine. Everything under
+# `tasks:` / `gateways:` / `hooks:` is byte-identical to loan_approval_kogito's
+# config — the policies are engine-independent, which is the point of the exercise.
+#
+# Unlike Flowable/Kogito, SimPN is not a third-party engine CUGA FLO proxies to — the
+# Simulation Runtime Service under src/cuga_flo/adapters/simpn/runtime/ is built from
+# this app's BPMN + simpn_parameters.yaml by scripts/build_simpn_app.sh, the same way
+# scripts/build_kogito_app.sh builds the Kogito/Quarkus service. See
+# docs/README-SIMPN.md for the three-step build/run/start lifecycle.
+#
+# PRECONDITION: the built service must already be running at `url` below:
+#     scripts/build_simpn_app.sh loan_approval_simpn
+#     build/simpn/loan_approval_simpn/run.sh
+
+flow:
+  name: "Loan Approval Process (SimPN)"
+  id: "loan_approval_simpn_v1"
+  version: "1.0"
+  bpmn_file: "BPMNdiagram.bpmn"
+
+workflow_engine:
+  type: simpn
+  url: http://localhost:8082
+  process_id: BPMNdiagram
+  callback_host: localhost
+  callback_port: 8090
+
+# Doubles as the extraction schema — see loan_approval_kogito_config.yaml's comment,
+# identical reasoning here.
+variables:
+  credit_score: 0.0
+  decision: "undecided"
+  manager_informed: false
+  applicant_name: ""
+  applicant_id: ""
+  loan_amount: 0
+  credit_history: ""
+  income: 0
+  employment_years: 0
+
+tasks:
+  - id: "Activity_0oydey5"
+    mode: task_agent
+    output_mapping:
+      credit_score: credit_score
+    agent:
+      name: "credit_checker"
+      system_instruction: "Analyses applicant information and returns a credit score 0.0–1.0"
+      tools: []
+      policy: "../policies/task-credit_check.md"
+
+gateways:
+  Gateway_09ad5fc:
+    mode: decision_agent
+    condition: "${credit_score} > 0.6"
+    policy: "../policies/decision-credit_decision.md"
+    flows:
+      Flow_0ybszcv:
+        decision: "Approve — credit score sufficient"
+      Flow_1jgea85:
+        decision: "Reject — credit score insufficient"
+
+action_permissions:
+  permitted_actions:
+    - continue
+    - skip_to
+    - terminate
+  prohibited_actions:
+    - skip_node
+    - swap_nodes
+
+hooks:
+  - id: "Flow_1e5ztf6"
+    type: "edge"
+    location: "Flow_1e5ztf6"
+    policy: "../policies/hook-screen-before-credit-check.md"
+  - id: "Flow_0ybszcv"
+    type: "edge"
+    location: "Flow_0ybszcv"
+    policy: "../policies/hook-approval_intercept.md"

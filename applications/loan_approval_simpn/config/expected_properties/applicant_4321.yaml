@@ -1,0 +1,14 @@
+# Oracle for applicant_id "4321" — hook-approval_intercept.md's regulatory override
+# must redirect this case to rejection regardless of credit score.
+eventually:
+  - case_resolved
+must:
+  - Activity_0oydey5  # credit check still ran
+  - Activity_131ar38  # rejection letter actually sent
+must_not:
+  - Activity_1h9ix55  # the loan must NOT be granted, even with a passing credit score
+acceptable_routes:
+  Flow_1jgea85: 1.0  # reject is the only acceptable route for this applicant
+intervention:
+  required_after:
+    - Flow_0ybszcv  # the approval-path hook must intervene for this applicant

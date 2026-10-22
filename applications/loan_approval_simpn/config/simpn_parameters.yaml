@@ -1,0 +1,16 @@
+# BPS parameters for the Simulation Runtime Service — the SimPN-side counterpart of
+# Prosimos's `prosimos-base-parameters.json` in the original design doc.
+#
+# ponytail: durations only for this first pass — no resource pools/calendars/arrival
+# distributions yet (see engine.py's module docstring: one DecProblem per instance,
+# so cross-case resource contention isn't modeled). Fixed seconds, not a distribution,
+# keeps this app's trace deterministic enough to assert against in tests.
+tasks:
+  Activity_0oydey5:  # check credit (task_agent — this is on top of agent latency)
+    duration_seconds: 2
+  Activity_1h9ix55:  # give loan of 1000 USD
+    duration_seconds: 1
+  Activity_131ar38:  # send a rejection letter
+    duration_seconds: 1
+  _D63C4A69-2BD5-4836-B86D-05397C0697CB:  # inform account manager
+    duration_seconds: 1

@@ -34,9 +34,29 @@ from cuga_flo.engine.hook_manager import (
 )
 from cuga_flo.engine.task_agent import TaskAgent
 from cuga_flo.engine.workflow_engine import ControlPointFlowKnowledge
+from cuga_flo.trace import TraceEvent, get_writer
 from cuga.backend.activity_tracker.tracker import ActivityTracker, Step
 
 tracker = ActivityTracker()
+
+
+def _trace(ctx: ControlPointFlowKnowledge, event_type: str, element_id: str, payload: dict) -> None:
+    """Unified-trace counterpart to the ActivityTracker calls around it — see
+    cuga_flo.trace's module docstring for why both exist side by side. No-op unless
+    CUGA_FLO_TRACE_PATH is set."""
+    writer = get_writer()
+    if writer is None:
+        return
+    writer.emit(
+        TraceEvent(
+            run_id=ctx.process_instance_id,
+            case_id=ctx.process_instance_id,
+            source="cuga",
+            event_type=event_type,
+            bpmn_element_id=element_id,
+            payload=payload,
+        )
+    )
 
 
 class FlowAgent:
@@ -142,6 +162,7 @@ class FlowAgent:
         result = await agent.execute(ctx.current_state, task_input)
         output = result.get("output", result.get("error", ""))
         tracker.collect_step(Step(name=ctx.element_name or task_id, data=str(output)))
+        _trace(ctx, "AGENT_TASK_COMPLETED", task_id, {"status": result.get("status"), "success": result.get("success")})
         return {
             "execution_path": [task_id],
             "process_variables": ctx.current_state.process_variables,
@@ -163,6 +184,7 @@ class FlowAgent:
                     data=f"Routed to flow: {flow_id}" + (f" — {reason}" if reason else ""),
                 )
             )
+            _trace(ctx, "AGENT_GATEWAY_ROUTED", gateway_id, {"flow_id": flow_id, "reason": reason})
             return flow_id
         except Exception as e:
             logger.error(f"  DecisionAgent error for {gateway_id}: {e}")
@@ -191,6 +213,7 @@ class FlowAgent:
                 data=result.message or result.action.value,
             )
         )
+        _trace(ctx, "AGENT_HOOK_EVALUATED", hook.id, {"action": result.action.value, "message": result.message})
         return result
 
     # ──────────────────────────────────────────────────────────────
