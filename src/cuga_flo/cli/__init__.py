@@ -49,6 +49,7 @@ def run_scenario(
     configs: str = typer.Option("G0,G1,G2,G3", "--configs", help="Comma-separated G-levels to run, each needing applications/<app>/config/<level>_config.yaml."),
     repetitions: int = typer.Option(1, "--repetitions", help="Repetitions per config."),
     trace_dir: str = typer.Option("traces", "--trace-dir", help="Directory for per-repetition unified-trace files."),
+    csv: Optional[str] = typer.Option(None, "--csv", help="Write one row per (config, repetition) here — design doc §16's own comparison table."),
 ) -> None:
     """
     Run a frozen scenario across one or more autonomy configurations (design doc §8).
@@ -56,11 +57,32 @@ def run_scenario(
     Builds and starts each config's SimPN Simulation Runtime Service in turn (one at
     a time, stopped before the next), runs the requested repetitions through the
     real FlowAgent, and prints a goal/decision-utility/intervention-F1/cycle-time
-    comparison table across configs.
+    comparison table, per-config aggregates, and the G0->G1->G2->G3 goal-achievement
+    ablation (design doc §16.4 — descriptive, not a fitted mixed-effects model; see
+    cuga_flo.scenarios.analysis's module docstring for why, and --csv for the raw
+    per-run table a real model would be fit over externally).
     """
     from cuga_flo.scenarios.cli import run as run_scenario_matrix
 
-    raise typer.Exit(run_scenario_matrix(app_name, scenario_path, configs.split(","), repetitions, trace_dir))
+    raise typer.Exit(run_scenario_matrix(app_name, scenario_path, configs.split(","), repetitions, trace_dir, csv))
+
+
+@app.command("author-scenario")
+def author_scenario_cmd(
+    app_name: str = typer.Argument(..., help="Application under applications/ (e.g. loan_approval_simpn)."),
+    scenario_id: str = typer.Argument(..., help="Id for the new scenario, e.g. S04."),
+    idea: str = typer.Option(..., "--idea", help="Natural-language description of the scenario to generate."),
+    out: Optional[str] = typer.Option(None, "--out", help="Write the generated scenario YAML here for review."),
+) -> None:
+    """
+    LLM-assisted scenario authoring (design doc §5) — offline, once; never at
+    benchmark runtime. Prints the generated scenario and any consistency warnings
+    (an element/flow/hook id the LLM invented that isn't real for this app);
+    nothing is treated as a frozen scenario until you review and save it yourself.
+    """
+    from cuga_flo.scenarios.cli import author as author_scenario_cli
+
+    raise typer.Exit(author_scenario_cli(app_name, scenario_id, idea, out))
 
 
 @app.command("patch-host")

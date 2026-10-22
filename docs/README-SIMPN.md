@@ -258,12 +258,51 @@ restriction.yaml` are designed to actually differentiate G-levels (see each file
 own comment for the expected story); `S03-slow-credit-check.yaml` exercises the
 perturbation mechanism itself rather than autonomy differentiation.
 
+### LLM-assisted scenario authoring
+
+`cuga-flo author-scenario <app> <scenario_id> --idea "<natural-language idea>" [--out PATH]`
+(design doc §5) converts a researcher's plain-English scenario idea into a
+structured, schema-validated draft — offline, once, never at benchmark runtime (the
+same reasoning that keeps the evaluator itself deterministic). `cuga_flo.scenarios.
+author.load_app_context` gives the LLM this app's real element/flow/hook ids and
+declared variables (reusing `BPMNParser`/`FlowConfig`, so it never drifts from what
+the engine actually sees) plus which variables are a Task Agent's *output* —
+`check_consistency` then flags any element/flow/hook id the LLM invented that isn't
+real for this app. Nothing is treated as frozen until you review and save the
+printed/written draft yourself — the design doc's own "optional researcher review"
+step before a scenario is frozen.
+
+Found live, not hypothetically: the first version of this prompt, given only
+variable names and defaults, had the LLM invent a FICO-scale `credit_score: 780.0`
+for an app whose own task policy defines that variable as 0.0-1.0 — a schema- and
+consistency-valid but semantically wrong initial value, because `credit_score` is
+normally computed by the Task Agent, not supplied upfront, and nothing had told the
+LLM that. Telling it which variables are Task Agent outputs (and to leave them out
+of `initial_state` rather than inventing a value) fixed it in the next run.
+
+### Comparative analysis — descriptive, not a fitted statistical model
+
+`cuga_flo.scenarios.analysis` (design doc §16) adds, on top of `run-scenario`'s
+comparison table: per-config aggregates (Goal Achievement Rate, mean decision
+utility, mean intervention F1, mean cycle time) and the G0→G1→G2→G3 ΔGAR ablation
+(§16.4) — always printed. `--csv PATH` writes one row per (config, repetition),
+exactly §16's own comparison table, ready to load into pandas/R/statsmodels.
+
+What this deliberately does **not** do is fit a real mixed-effects model (§16.1-
+§16.3) or test the `AutonomyLevel × PerturbationSeverity` interaction (§16.3) — see
+`analysis.py`'s module docstring: a demo's N=1-3 repetitions per cell isn't enough
+to support a GLMM (the design doc itself says "where sample size permits"), fitting
+one anyway would manufacture false confidence rather than real statistical
+insight, and the severity dimension that interaction needs isn't part of the
+scenario schema yet either. The CSV export is the intended handoff point for that
+analysis once there's a scenario suite with real repetition counts to justify it.
+
 ### Still deferred
 
-The scenario-runner CLI and the comparative matrix are now built; LLM-assisted
-scenario authoring (design doc §5 — turning a natural-language scenario idea into a
-validated YAML) and the statistical/mixed-effects analysis layer (design doc §16)
-remain out of scope.
+Both of design doc §5 and §16 are now implemented in the scoped form described
+above. What's left unbuilt: a fitted mixed-effects/GLMM model, a severity dimension
+on the scenario schema, and anything that would need those (the `AutonomyLevel ×
+PerturbationSeverity` interaction specifically).
 
 ---
 

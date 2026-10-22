@@ -27,5 +27,8 @@ venv/
 *.log
 logs/
 
+# cuga-flo run-scenario's unified-trace output (default --trace-dir is "traces")
+/traces*/
+
 # PowerPoint lock files
 ~$*
