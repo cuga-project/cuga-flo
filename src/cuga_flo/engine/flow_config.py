@@ -18,7 +18,7 @@ from cuga_flo.engine.flow_agent_state import FlowState
 from cuga.sdk import CugaAgent
 
 # Locally-built agent kinds. Anything else in agent_type: must name a remote_agents: key.
-# Mirrors AgentType in src/cuga_flo/engine/app_yaml_schema.py.
+# Mirrors AgentType in src/cuga_flo/schemas/app_yaml_schema.py.
 _BUILTIN_AGENT_TYPES = {"cuga_agent", "claude_agent", "langgraph", "crewAI", "wxo"}
 
 
@@ -27,7 +27,7 @@ class FlowConfig:
     Configuration for FlowAgent loaded from YAML.
 
     For the authoritative YAML schema see:
-    src/cuga_flo/engine/app_yaml_schema.py
+    src/cuga_flo/schemas/app_yaml_schema.py
     """
 
     def __init__(self, config_dict: Dict[str, Any], config_file_dir: Optional[str] = None):
