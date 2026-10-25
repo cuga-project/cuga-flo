@@ -63,6 +63,7 @@ applications/loan_approval_simpn/
 ├── config/
 │   ├── loan_approval_simpn_config.yaml   ← new: workflow_engine.type: simpn
 │   ├── simpn_parameters.yaml             ← new: BPS durations (SimPN's own file)
+│   ├── formulas.py                       ← new: native formula: lookups, optional
 │   ├── BPMNdiagram.bpmn                  ← copied verbatim from the seed app
 │   ├── G0_config.yaml .. G3_config.yaml  ← new: autonomy-ladder variants (§4)
 │   ├── expected_properties/*.yaml        ← new: oracles for a single manual run
@@ -136,10 +137,11 @@ source .venv/bin/activate
 
 This dumps the BPMN model and the engine-consumable config to JSON
 (`process_model.json`, `engine_config.json`) and copies `simpn_parameters.yaml`
-into a staged build directory (`build/simpn/loan_approval_simpn/`), alongside a
-fresh isolated venv with `simpn`+`pyyaml` — never CUGA FLO's main venv. The
-service reads only that staged copy at runtime, so **re-run this after any change**
-to the BPMN model, the app config, or `simpn_parameters.yaml` — none of them take
+— and `config/formulas.py`, if the app has one — into a staged build directory
+(`build/simpn/loan_approval_simpn/`), alongside a fresh isolated venv with
+`simpn`+`pyyaml` — never CUGA FLO's main venv. The service reads only that
+staged copy at runtime, so **re-run this after any change** to the BPMN model,
+the app config, `simpn_parameters.yaml`, or `formulas.py` — none of them take
 effect until the next build.
 
 ---
