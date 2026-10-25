@@ -252,10 +252,13 @@ concretely, for `loan_approval_simpn`, the four files differ only in
 | `G2_config.yaml` | `mode: task_agent` | `mode: decision_agent` | none |
 | `G3_config.yaml` | `mode: task_agent` | `mode: decision_agent` | both |
 
-G0's task has no conventional/deterministic scoring formula in this demo, so its
-`credit_score` never leaves its 0.0 default — worth knowing before you're surprised
-that G0 rejects every applicant regardless of scenario; that's the point, not a bug
-(see README-SIMPN.md for the full reasoning).
+`G0_config.yaml`'s task also carries a `formula: "credit_score_formula"` — a
+deterministic scoring computation built into the SimPN runtime service itself (see
+§2's `formula:` entry). So G0 computes a real `credit_score` from the applicant's
+profile, same as G1/G2's LLM-driven score, just without any agentic reasoning behind
+it. This means G0 is **not** a "rejects everyone" baseline: it approves and rejects
+exactly like G1/G2 on credit score alone, and only differs from them where the
+gateway or a hook's oversight matters (see README-SIMPN.md for the full reasoning).
 
 ---
 
