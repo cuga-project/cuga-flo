@@ -15,7 +15,13 @@ dependencies = [
     # HAS_A2A_SDK silently swallows it to False, and every agent_type: agent0 task fails
     # FlowAgent construction with "a2a-sdk is not installed". Keep aligned with cuga-agent.
     "a2a-sdk[http-server]>=1.0.2,<2.0",
-    "fastmcp>=3.2.0",
+    # <3.2.4: fastmcp 3.2.4+ is a stub that redirects to fastmcp-slim, which forces
+    # mcp>=2.0 — but cuga's own registry server (mcp_manager/adapter.py) still imports
+    # the removed v1 API (mcp.server.fastmcp.FastMCP), so mcp>=2 breaks it outright
+    # ("No module named 'mcp.server.fastmcp'") the moment `cuga-flo start` tries to
+    # launch the registry subprocess. 3.2.0-3.2.3 are the last real releases still
+    # requiring mcp<2.0 — verified against PyPI's published wheel metadata for each.
+    "fastmcp>=3.2.0,<3.2.4",
     "langgraph",
     "langchain-core>=1.2.22",
     "pydantic>=2",
