@@ -110,10 +110,38 @@ control.
 
 | Level | Mechanism |
 |---|---|
-| G0 (native) | plain `add_event`; duration-only `behavior`, no MCP call |
+| G0 (native) | plain `add_event`; duration-only `behavior`, no MCP call — optionally a `formula:` lookup (below), still no MCP call |
 | G1 (task autonomy) | a `mode: task_agent` task's `behavior` blocks on `execute_task` |
 | G2 (decision autonomy) | a `mode: decision_agent` gateway becomes an `add_decision` — SimPN's native "decision event" concept, which pauses the simulated clock while it resolves, a close structural match |
 | G3 (oversight autonomy) | every hooked edge's `behavior` blocks on `evaluate_hook`; see below |
+
+### `formula:` — a native task's own built-in computation, no callback at all
+
+Distinct from `tool:` (`TaskConfig.tool`, LangGraph-only today): `tool:` names an
+**externally-injected** Python callable — the caller constructing `FlowAgent`
+supplies `tools={name: fn}`, and no engine's `FlowConfig.to_flow_agent()` dispatch
+actually threads a `tools=` dict through, so there is no pure-YAML path to it for
+*any* engine. `formula:` is the opposite: a deterministic computation the
+**engine itself** ships, selected by name, with the function never supplied by a
+caller. For SimPN, `make_task_behavior`'s native (non-agentic) branch looks up
+`process.native_formulas.get(eid)` in `runtime/formulas.py`'s `REGISTRY` and, if
+found, calls it directly with `state["process_variables"]` — no MCP call, no
+CUGA FLO process involved, the same locality the perturbation mechanism already
+has. An unregistered name doesn't crash the run; it emits a `FORMULA_NOT_FOUND`
+trace event and falls through unchanged, the same fallback-and-trace discipline
+`_resolve_hook_target` already uses.
+
+This exists because a native task doing *nothing* overstates how badly a real
+legacy system performs — the design doc frames G0 as following "conventional
+BPMN/BPS behavior," not as a no-op. `loan_approval_simpn`'s `G0_config.yaml` uses
+`formula: "credit_score_formula"` (a crude, keyword-and-arithmetic approximation
+of `policies/task-credit_check.md`'s scoring rubric) so G0 can compute a real,
+if rigid, credit score instead of leaving `credit_score` at its 0.0 default for
+every case. Found live, fixed in the same pass: the first version's keyword
+check for a bad payment history matched the substring `"default"` inside the
+phrase `"no defaults"`, scoring a genuinely good history as bad — fixed by
+checking positive phrases first, with a regression test
+(`test_credit_score_formula_does_not_misread_a_negated_keyword`).
 
 ### The full `HookAction` vocabulary, one mechanism
 
@@ -233,11 +261,11 @@ case.
 The runner expects one config file per level, named `G0_config.yaml` ..
 `G3_config.yaml` under the app's `config/`, sharing the same BPMN model and
 policies — only `tasks:`/`gateways:`/`hooks:` differ. `loan_approval_simpn`'s four
-variants are the worked example: G0 strips the task to `mode: native` and the
-gateway to a plain condition (so `credit_score` never leaves its 0.0 default — no
-native scoring formula exists in this demo, which is itself the point: G0 cannot
-assess an applicant it has no deterministic way to score), G1 adds the Task Agent
-back, G2 adds the Decision Agent, G3 (content-identical to the app's default
+variants are the worked example: G0 strips the task to `mode: native` with
+`formula: "credit_score_formula"` (see "`formula:`" above — a real, if crude,
+deterministic score, not the 0.0 default a bare native task would otherwise leave
+unchanged) and the gateway to a plain condition, G1 adds the Task Agent back, G2
+adds the Decision Agent, G3 (content-identical to the app's default
 `loan_approval_simpn_config.yaml`) adds the two oversight hooks.
 
 ### Running it

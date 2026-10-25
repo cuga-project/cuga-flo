@@ -151,6 +151,7 @@ class FlowConfig:
         """
         agentic_task_ids = []
         tool_tasks: Dict[str, Optional[str]] = {}
+        native_formulas: Dict[str, str] = {}
         task_instructions: Dict[str, str] = {}
 
         for task in self.tasks_config:
@@ -167,6 +168,12 @@ class FlowConfig:
                 agentic_task_ids.append(task_id)
             else:
                 tool_tasks[task_id] = task.get("tool") or None
+                # `formula:` only means something for a native task — it is the
+                # engine's own built-in deterministic computation, the opposite of
+                # `tool:`'s externally-injected callable; see TaskConfig.formula's
+                # docstring in schemas/app_yaml_schema.py.
+                if task.get("formula"):
+                    native_formulas[task_id] = task["formula"]
 
         decision_gateway_ids = [
             gw_id
@@ -200,6 +207,7 @@ class FlowConfig:
             "hooks": hooks_data,
             "flow_conditions": flow_conditions,
             "tool_tasks": tool_tasks,
+            "native_formulas": native_formulas,
             "action_permissions": self.get_action_permissions(),
         }
 

@@ -20,7 +20,7 @@ import uvicorn
 from fastmcp import FastMCP
 
 from cuga_flo.adapters.simpn.proxy import SimPNProxy
-from cuga_flo.adapters.simpn.runtime import engine, server
+from cuga_flo.adapters.simpn.runtime import engine, formulas, server
 from cuga_flo.adapters.simpn.runtime import trace as simpn_trace
 from cuga_flo.evaluation.expected_properties import ExpectedProperties
 from cuga_flo.evaluation.metrics import evaluate
@@ -155,6 +155,40 @@ def test_native_gateway_uses_condition_without_decision_agent(mcp_bridge):
     state = _run(process, mcp_bridge, key="run-native")
     # execute_task always sets credit_score=0.8, so the "> 0.6" condition picks f2.
     assert state["execution_path"] == ["T1", "G1", "T2", "End1"]
+
+
+def test_native_task_with_a_formula_computes_without_any_mcp_call(mcp_bridge):
+    """A formula: task is not in agentic_task_ids — no execute_task call at all —
+    yet it still updates process_variables, entirely inside this process."""
+    engine_config = dict(
+        _ENGINE_CONFIG, agentic_task_ids=[], decision_gateway_ids=[], native_formulas={"T1": "credit_score_formula"}
+    )
+    process = engine.ProcessModel(_PROCESS_MODEL, engine_config)
+    mcp_bridge["hook_action"].update(action="continue")
+    state = _run(
+        process,
+        mcp_bridge,
+        key="run-formula",
+        simpn_params={},
+    )
+    # T1's formula should have set a real credit_score from (empty) process_variables.
+    assert "credit_score" in state["process_variables"]
+    assert mcp_bridge["completed"] == ["run-formula"]  # still reaches complete_process
+
+
+def test_unknown_formula_name_is_traced_not_crashed(process, mcp_bridge):
+    engine_config = dict(
+        _ENGINE_CONFIG, agentic_task_ids=[], decision_gateway_ids=[], native_formulas={"T1": "no_such_formula"}
+    )
+    no_formula_process = engine.ProcessModel(_PROCESS_MODEL, engine_config)
+    mcp_bridge["hook_action"].update(action="continue")
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    state = _run(no_formula_process, mcp_bridge, trace_sink=sink, key="run-unknown-formula")
+    sink.close()
+    assert state["is_complete"] is True  # doesn't crash the run
+    events = [json.loads(line) for line in open(path)]
+    assert any(e["event_type"] == "FORMULA_NOT_FOUND" for e in events)
 
 
 # ── G3: every HookAction, one mechanism ────────────────────────────────────────
@@ -476,6 +510,56 @@ def test_scenario_schema_round_trips_the_design_doc_example():
     assert scenario.scenario_id == "S07"
     assert scenario.perturbations[1].when == "T5.complete"
     assert scenario.expected_properties.must == ["valid_verification_before_approval"]
+
+
+# ── formulas.py — native, deterministic, no-MCP-call task computation ────────────
+
+
+def test_credit_score_formula_rewards_a_well_qualified_applicant():
+    result = formulas.credit_score_formula(
+        {
+            "applicant_id": "A12345",
+            "credit_history": "Excellent payment history, no defaults",
+            "loan_amount": 1000,
+            "income": 75000,
+            "employment_years": 5,
+        }
+    )
+    assert result["credit_score"] > 0.6  # must clear the gateway's approval threshold
+
+
+def test_credit_score_formula_does_not_misread_a_negated_keyword():
+    """Found live: 'no defaults' contains the substring 'default', so a naive
+    negative-keyword check used to misread a *good* history as bad — this is the
+    regression test for that fix."""
+    good = formulas.credit_score_formula(
+        {"applicant_id": "A1", "credit_history": "no defaults, no late payments", "loan_amount": 1000, "income": 75000, "employment_years": 5}
+    )
+    bad = formulas.credit_score_formula(
+        {"applicant_id": "A1", "credit_history": "multiple missed payments and a default", "loan_amount": 1000, "income": 75000, "employment_years": 5}
+    )
+    assert good["credit_score"] > bad["credit_score"]
+
+
+def test_credit_score_formula_edge_cases_match_the_policy_literally():
+    assert formulas.credit_score_formula({"credit_history": "x", "loan_amount": 1, "income": 1}) == {
+        "credit_score": 0.0,
+        "rejection_reason": "identity_unverified",
+    }
+    assert formulas.credit_score_formula({"applicant_id": "A1", "loan_amount": 1, "income": 1}) == {
+        "credit_score": 0.3,
+        "no_history": True,
+    }
+
+
+def test_credit_score_formula_applies_the_large_loan_stricter_threshold():
+    small = formulas.credit_score_formula(
+        {"applicant_id": "A1", "credit_history": "excellent", "loan_amount": 1000, "income": 75000, "employment_years": 5}
+    )
+    large = formulas.credit_score_formula(
+        {"applicant_id": "A1", "credit_history": "excellent", "loan_amount": 60000, "income": 75000, "employment_years": 5}
+    )
+    assert large["credit_score"] < small["credit_score"]
 
 
 if __name__ == "__main__":

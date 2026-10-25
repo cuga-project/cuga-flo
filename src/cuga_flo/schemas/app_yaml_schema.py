@@ -95,7 +95,21 @@ class TaskConfig(BaseModel):
     id: str
     mode: TaskMode
     agent: Optional[TaskAgentConfig] = None
+    # Binds an EXTERNALLY-supplied Python callable, by name — the caller constructing
+    # FlowAgent passes tools={name: fn}; nothing in this YAML file provides the
+    # function itself. (LangGraph-only today: FlowConfig.to_flow_agent() never
+    # threads a tools= dict through for any engine, so this needs custom Python
+    # wiring regardless of engine — there is no pure-YAML path to it yet.)
     tool: Optional[str] = None
+    # Names a deterministic computation the ENGINE ITSELF provides, built in —
+    # the opposite of `tool:` above. Looked up in a small per-engine registry
+    # (e.g. src/cuga_flo/adapters/simpn/runtime/formulas.py for SimPN) shipped
+    # with that engine's own code; the YAML never supplies the function, only
+    # picks one by name. Distinct field so `tool:`'s existing "externally
+    # injected" meaning never gets overloaded with "built into this engine" —
+    # the same config value must mean the same thing on every engine that reads
+    # it, which an overloaded `tool:` would not guarantee.
+    formula: Optional[str] = None
     # Top-level instruction: alternative to agent.system_instruction for native tasks
     # or when agent: section is absent.  flow_config.py reads task.get("instruction").
     instruction: Optional[str] = None

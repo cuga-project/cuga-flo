@@ -7,10 +7,15 @@
 >   and the schema-relocation `8eae91c`): live-verified across the full G0-G3
 >   ladder with real LLM calls.
 > - **Milestone 3 — LLM-assisted authoring + comparative analysis** (commit
->   `fc51431`): see the new section at the end. Live-verified; comparative analysis
->   is deliberately descriptive (aggregates + ablation + CSV export), not a fitted
->   mixed-effects model — see that section for exactly why and what would need to
->   change to build one.
+>   `fc51431`): live-verified; comparative analysis is deliberately descriptive
+>   (aggregates + ablation + CSV export), not a fitted mixed-effects model — see
+>   that section for exactly why.
+> - **Milestone 4 — native `formula:` for a task running with no agent at all**
+>   (see the new section at the end): closes a real gap the design doc's own
+>   framing of G0 implied but this build never had — a "conventional BPMN/BPS"
+>   task with zero deterministic logic, not just zero agentic reasoning. Changes
+>   the G0 story for the regulatory-restriction scenario in Milestone 2's
+>   verification result — see that section's as-built note and Milestone 4.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
@@ -18,7 +23,8 @@
 > narrower than either doc anticipated: a fitted mixed-effects/GLMM model and a
 > severity dimension on the scenario schema (needed for the `AutonomyLevel ×
 > PerturbationSeverity` interaction specifically) — see Milestone 3. See
-> `docs/README-SIMPN.md` for the as-built integration guide and known gaps.
+> `docs/README-SIMPN.md` and `docs/running-simulation-experiments.md` for the
+> as-built integration guide, usage walkthrough, and known gaps.
 
 # CUGA FLO × SimPN — Simulation Runtime Service (Infrastructure Milestone)
 
@@ -275,6 +281,12 @@ adapt to who the applicant is), not discovered as a side effect — but its full
 consequence (G0 "succeeding" on a regulatory-restriction scenario by accident,
 rather than by oversight) only became visible once run live — see below.
 
+> **As-built update (Milestone 4):** "no conventional/deterministic credit-scoring
+> formula exists in this demo app" stopped being true — see Milestone 4's `formula:`
+> field. G0 no longer always rejects; the regulatory-restriction scenario's result
+> below describes G0's *pre-formula* behavior, which Milestone 4 supersedes with a
+> cleaner (and arguably more honest) story.
+
 ### The scenario runner manages the service lifecycle itself, one repetition per subprocess
 
 `cuga_flo.scenarios.runner` builds and starts each G-level's service in turn
@@ -425,3 +437,122 @@ something to half-build now on data too thin to support it.
 - Live: `cuga-flo run-scenario ... --csv PATH` against a free (no-LLM, G0-only)
   run — comparison table, aggregate table, ablation message, and CSV all verified
   correct, including the CSV's exact column/row shape.
+
+## Milestone 4 — native `formula:` for a task running with no agent at all
+
+### The gap
+
+G0 ("conventional BPMN/BPS, no agentic control") ran every task — including
+`loan_approval_simpn`'s credit-check — as a pure SimPN native task: duration
+sampling only, no scoring logic at all. `credit_score` simply stayed at its
+Pydantic default (`0.0`) for the rest of the case. This happened to make every
+G0 run reject every applicant, which accidentally "passed" some scenarios
+(e.g. the original S02 regulatory-restriction scenario, where G0 rejected
+"4321" — not because it caught the regulatory issue, but because it rejects
+everyone). That's a false success: it collapses `goal_achieved` and
+`intervention_f1` into agreeing for the wrong reason, and it understates what
+G0 actually is — "no agentic *control*," not "no deterministic *logic*." A
+conventional workflow engine's native tasks routinely run real business
+logic (a rate table, a scoring formula, a tax calculation) with zero agent
+involvement; the build had no way to express that.
+
+### Why not reuse `tool:`?
+
+The user asked directly: "why would the config mention the inner
+functionality of a native task as 'tool', isn't its inner logic implemented
+in python (i.e., formulas.py) as part of the simpn config?" Reusing `tool:`
+would conflate two different things:
+
+- `tool:` (`TaskConfig.tool`) already means an **externally-injected**
+  Python callable — the caller building `FlowAgent` passes `tools={name: fn}`
+  at construction time. Nothing in the YAML itself supplies the function.
+  (In fact no engine's `FlowConfig.to_flow_agent()` threads a `tools=` dict
+  through today, so this field is currently unreachable from pure YAML for
+  *any* engine — a pre-existing gap this milestone didn't touch.)
+- What G0's credit-check task actually needs is the opposite: a computation
+  **built into the engine's own code**, looked up by name, that the YAML
+  never supplies — the SimPN runtime service ships `formulas.py` the same
+  way it ships `engine.py` itself.
+
+Overloading `tool:` to mean both would make the same config key mean
+different things depending on which engine reads it, breaking the
+config-portability goal the schema is meant to preserve. So this milestone
+adds a second, clearly-scoped field instead: `formula: Optional[str] = None`
+on `TaskConfig` (`src/cuga_flo/schemas/app_yaml_schema.py`), with a docstring
+contract spelling out the distinction so neither field's meaning drifts later.
+
+### Implementation
+
+- `src/cuga_flo/schemas/app_yaml_schema.py` — `TaskConfig.formula`, documented
+  against `TaskConfig.tool` as described above.
+- `src/cuga_flo/engine/flow_config.py` — `to_engine_config()` extracts a
+  `native_formulas: {task_id: formula_name}` map, populated only for tasks
+  that aren't agentic (mirrors how `tool_tasks` is already extracted in the
+  same branch).
+- `src/cuga_flo/adapters/simpn/runtime/formulas.py` (new) — a small
+  `REGISTRY: dict[str, Callable[[dict], dict]]`, today holding one entry:
+  `credit_score_formula`, a deterministic approximation of
+  `policies/task-credit_check.md`'s rubric (payment history 35%,
+  debt-to-income 30%, length of credit history 15%, credit mix 10%, recent
+  enquiries 10%; identity-unverified and no-credit-history edge cases;
+  debt-to-income weighted 10pp higher above a $50k loan). `credit_mix` and
+  `recent_enquiries` have no structured input in this demo, so both are
+  fixed at `0.5` — calibrated against what the G1/G2 LLM itself typically
+  assigns when a factor goes unmentioned in a profile, observed in earlier
+  live transcripts.
+- `src/cuga_flo/adapters/simpn/runtime/engine.py` — `make_task_behavior()`
+  now checks, in order: is this task agentic (G1+, existing MCP-callback
+  path) → else does it have a `formula:` (new: look up `REGISTRY`, apply it
+  to `process_variables`, trace `formula_applied`) → else plain native
+  duration-only behavior, unchanged. An unknown formula name traces
+  `FORMULA_NOT_FOUND` rather than crashing the simulation.
+- `applications/loan_approval_simpn/config/G0_config.yaml` — the credit-check
+  task gets `formula: "credit_score_formula"`; the file's header comment no
+  longer claims G0 always rejects.
+
+### A real bug the live check caught
+
+A manual validation script compared the formula's score for S01's qualifying
+applicant ("Excellent payment history, no defaults") against a deliberately
+bad test case ("Multiple missed payments and a default") and got the *same*
+depressed score for both. Cause: `"no defaults"` contains the substring
+`"default"`, so a negative-keyword-only check (`"default" in text.lower()`)
+misread the good history as bad. Fixed by checking a `positive_phrases` list
+(`"excellent"`, `"good standing"`, `"strong"`, `"clean record"`, `"no
+default"`, `"no late"`, `"no missed"`) **first**, with priority over the
+negative-keyword check — only falling through to the negative check when no
+positive phrase matches. Regression test:
+`test_credit_score_formula_does_not_misread_a_negated_keyword`.
+
+### Live verification
+
+- S01 (qualifying applicant) under G0: `credit_score` now computes to `0.84`
+  (previously stuck at `0.0`) → `goal_achieved` flips `False → True`.
+- A deliberately bad profile: `0.57`, correctly below S01's.
+- Identity-unverified and no-credit-history edge cases: exact match to the
+  policy's stated defaults (`0.0`+`rejection_reason`, `0.3`+`no_history`).
+- A >$50k loan: measurably stricter (debt-to-income weighted higher), as the
+  policy specifies.
+- **This changes S02's story**, and the live run confirmed it isn't cosmetic:
+  under G0, applicant "4321" now also scores well on the formula (same
+  ~0.8-range result the regulatory restriction has no notion of) and gets
+  wrongly approved — joining G1/G2 instead of "succeeding by accident." G0,
+  G1, and G2 now fail S02 identically (no oversight hook in any of them);
+  only G3 catches it. This is a cleaner, more honest 3-vs-1 differentiation
+  than before, and the four places that described the old behavior were
+  updated to match: `S02-regulatory-restriction.yaml`'s header/description,
+  `docs/running-simulation-experiments.md` §7's worked table/aggregates/
+  ablation/interpretation, `docs/README-SIMPN.md`'s G0-G3 mechanism section,
+  and the as-built note added inline in this plan's Milestone 2 section
+  above — rather than silently rewriting history, the old claim is left in
+  place with a blockquote pointing here.
+
+### Verification (tests)
+
+- `tests/test_simpn_adapter.py`: `test_native_task_with_a_formula_computes_without_any_mcp_call`,
+  `test_unknown_formula_name_is_traced_not_crashed` (engine-level), plus four
+  pure-function tests on `credit_score_formula` itself — a well-qualified
+  applicant, the negated-keyword regression, the policy's literal edge cases,
+  and the >$50k stricter-weighting case. 56/56 passing across the full suite.
+- `docs/running-simulation-experiments.md` and `docs/README-SIMPN.md` updated
+  to document the `formula:` field and its effect on the G0 story.

@@ -105,6 +105,21 @@ scenario runner's comparative matrix (§4/§5). Each is the *same* app config wi
 only `tasks:`/`gateways:`/`hooks:` stripped down to that level — see §4 for how
 they differ concretely.
 
+**`formula:`** — a task field, sibling to `tool:`, for giving a `mode: native`
+task some real deterministic business logic instead of leaving it a pure
+pass-through. The two fields mean opposite things, deliberately kept distinct so
+the same YAML value can't mean two different things on two different engines:
+`tool:` names an **externally-injected** Python callable (the LangGraph engine's
+pattern — a caller constructing `FlowAgent` supplies `tools={name: fn}`; there is
+no pure-YAML path to it for any engine today), while `formula:` names a
+deterministic computation the **engine itself** provides, built in — looked up by
+name in a small registry shipped with that engine's own code
+(`src/cuga_flo/adapters/simpn/runtime/formulas.py` for SimPN). `G0_config.yaml`'s
+`Activity_0oydey5` task uses `formula: "credit_score_formula"` — a crude but real
+approximation of `policies/task-credit_check.md`'s scoring rubric, run with no LLM
+and no MCP call at all, giving G0 *some* conventional rule instead of none (see
+§7 for why that distinction turned out to matter for how a result should be read).
+
 ### Turning this into a runnable service
 
 ```bash
@@ -365,34 +380,45 @@ and ablation views are computed from that same real data (shown together here, a
 ```
 config rep  goal   util   interv_f1  cycle_s
 -----------------------------------------------
-G0     0    True   1.0    0.0        0.0
+G0     0    False  1.0    0.0        0.0
 G1     0    False  1.0    0.0        20.0
 G2     0    False  1.0    0.0        12.1
 G3     0    True   1.0    1.0        17.5
 
 config n    GAR    mean_util  mean_interv_f1  mean_cycle_s
-G0     1    1.00   1.00       0.00            0.00
+G0     1    0.00   1.00       0.00            0.00
 G1     1    0.00   1.00       0.00            20.00
 G2     1    0.00   1.00       0.00            12.10
 G3     1    1.00   1.00       1.00            17.50
 
 Ablation (ΔGAR — Goal Achievement Rate):
-  G0 -> G1: -1.00
+  G0 -> G1: +0.00
   G1 -> G2: +0.00
   G2 -> G3: +1.00
-  G0 -> G3: +0.00
+  G0 -> G3: +1.00
 ```
 
-Reading it: **`goal`/GAR alone is not the whole story.** G0 and G3 both score
-`goal=True`, but for opposite reasons — check `intervention_f1` to tell them apart.
-G0's `0.0` means no real oversight ever happened (it has no hooks at all; it
-rejects every case regardless of scenario, so it happens to land on the "right"
-outcome here by accident). G3's `1.0` means the hook genuinely caught the
-restriction. G1/G2 score `goal=False` because they compute a real, correct credit
-score and — with no hook to check for regulatory restrictions — wrongly approve.
-The ablation's `G0 -> G1: -1.00` is a real regression to read carefully: it's
-*task autonomy without oversight* exposing a governance gap, not a sign that G1 is
-"worse" in any general sense.
+Reading it: **all three of G0/G1/G2 fail identically, and for the same reason.**
+G0's `check credit` task now runs a real (if crude) native formula — see §2's note
+on `formula:` — so it scores this applicant's profile a real credit_score too,
+same as G1/G2's LLM-driven score, and approves on it exactly the way they do. None
+of the three has a hook, so all three wrongly grant the restricted loan:
+`goal=False`, `intervention_f1=0.0` across the board — the required intervention
+never had a hook to fire through in any of them. Only G3 adds the hook, and its
+`intervention_f1=1.0` proves the catch was genuine, not incidental. The whole
+`ΔGAR` gain is concentrated in the `G2 -> G3` step — exactly the point of this
+scenario: it isolates **oversight autonomy specifically**, with task and decision
+autonomy alone (G1, G2) contributing nothing to this particular failure mode.
+
+This wasn't always this clean a story. Before `G0_config.yaml` gained its
+`formula:` field, G0's `credit_score` sat at its 0.0 default for every applicant,
+so G0 rejected everyone unconditionally — "succeeding" on this scenario by
+accident, for a reason unrelated to oversight, which needed real caveat-reading to
+interpret correctly (`goal=True` but `intervention_f1=0.0` telling two different
+stories). Giving G0 a real, if crude, scoring rule made it fail for the *same
+legible reason* G1/G2 do, which is arguably the more honest baseline: a real
+legacy system's limits should show up as *missing capability* (here, oversight),
+not as a side effect of not being able to do arithmetic at all.
 
 ### Loading the CSV for more
 

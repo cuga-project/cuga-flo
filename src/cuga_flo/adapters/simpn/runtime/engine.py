@@ -48,6 +48,7 @@ from typing import Any
 
 from simpn.simulator import DecProblem, SimToken
 
+from . import formulas
 from . import perturbations as _perturbations
 from . import trace as _trace
 
@@ -145,6 +146,9 @@ class ProcessModel:
 
         self.agentic_task_ids: set[str] = set(engine_config.get("agentic_task_ids", []))
         self.decision_gateway_ids: set[str] = set(engine_config.get("decision_gateway_ids", []))
+        # A native task's own built-in deterministic computation — opposite of
+        # `tool:`'s externally-injected callable; see TaskConfig.formula's docstring.
+        self.native_formulas: dict[str, str] = engine_config.get("native_formulas", {})
         self.task_instructions: dict[str, str] = engine_config.get("task_instructions", {})
         self.flow_conditions: dict[str, str] = engine_config.get("flow_conditions", {})
         self.hooks: dict[str, dict] = {
@@ -348,6 +352,7 @@ def build_problem(
 
     def make_task_behavior(eid: str, element: dict):
         is_agentic = eid in process.agentic_task_ids
+        formula_name = process.native_formulas.get(eid)
         outgoing = process.outgoing.get(eid, [])
         instruction = process.task_instructions.get(eid)
 
@@ -356,13 +361,30 @@ def build_problem(
             base_duration = _duration(eid, simpn_params)
             multiplier = state["_duration_overrides"].get(eid, 1.0)
             duration = base_duration * multiplier
+            formula_applied = None
             if is_agentic:
                 ctx = _ctx(state, eid, element["name"], process, task_instruction=instruction)
                 result = mcp_client.call_tool(mcp_url, "execute_task", {"task_id": eid, "ctx": ctx})
                 state["process_variables"] = result.get("process_variables", state["process_variables"])
                 state["task_results"].update(result.get("task_results", {}))
+            elif formula_name:
+                # The engine's own built-in deterministic computation — no MCP
+                # call, no CUGA FLO process involved at all. See formulas.py.
+                fn = formulas.REGISTRY.get(formula_name)
+                if fn is None:
+                    trace_control_point(
+                        state, "FORMULA_NOT_FOUND", eid, {"formula": formula_name}
+                    )
+                else:
+                    state["process_variables"].update(fn(state["process_variables"]))
+                    formula_applied = formula_name
             state["execution_path"] = state["execution_path"] + [eid]
-            trace_control_point(state, "ACTIVITY_COMPLETE", eid, {"agentic": is_agentic, "duration": duration})
+            trace_control_point(
+                state,
+                "ACTIVITY_COMPLETE",
+                eid,
+                {"agentic": is_agentic, "formula_applied": formula_applied, "duration": duration},
+            )
             check_point(state, eid, "complete")
             if not outgoing:  # a task with no outgoing flow is a dead end, not a normal model
                 state["is_complete"] = True

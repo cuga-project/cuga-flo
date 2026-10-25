@@ -4,13 +4,16 @@
 # tasks:/gateways:/hooks: differ from G1-G3. Used by the scenario runner
 # (cuga_flo.scenarios.runner), not by `cuga-flo start` directly.
 #
-# credit_score has no conventional/native implementation in this demo app — the only
-# thing that ever computes it is the LLM-driven task_agent, which G0 doesn't use. So
-# credit_score stays at its YAML default (0.0) for every case, and the gateway's
-# "${credit_score} > 0.6" condition is always false — G0 always rejects. This is
-# deliberate, not a bug: it is itself the experimental point of G0 — a conventional
-# workflow with no real scoring mechanism cannot adapt to who the applicant actually
-# is, however good their application looks on paper.
+# credit_score is computed by `formula: credit_score_formula` — a deterministic,
+# built-in approximation of policies/task-credit_check.md's scoring rubric (see
+# src/cuga_flo/adapters/simpn/runtime/formulas.py), run entirely inside the
+# Simulation Runtime Service with no LLM and no MCP call at all. This is G0's
+# actual "conventional BPMN/BPS behavior" — a real legacy system's crude, rigid
+# rule, not the complete absence of one. It will often reach a similar
+# credit_score to the LLM-driven G1+ path for a straightforward case, which is
+# the right baseline: G0's limits should show up as *inflexibility* under a
+# scenario it has no rule for (e.g. a regulatory restriction only a hook can
+# catch — see S02), not as an inability to do arithmetic at all.
 
 flow:
   name: "Loan Approval Process (SimPN) — G0 legacy"
@@ -39,6 +42,7 @@ variables:
 tasks:
   - id: "Activity_0oydey5"
     mode: native
+    formula: "credit_score_formula"
 
 gateways:
   Gateway_09ad5fc:
