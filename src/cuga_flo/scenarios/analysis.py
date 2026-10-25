@@ -25,8 +25,11 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass, fields
+from typing import Any
 
 from cuga_flo.evaluation.metrics import Scorecard
+from cuga_flo.evaluation.trace_run import TraceRun
+from cuga_flo.scenarios.runner import trace_path_for
 
 _CONFIG_ORDER = ["G0", "G1", "G2", "G3"]
 _ABLATION_PAIRS = [("G0", "G1"), ("G1", "G2"), ("G2", "G3"), ("G0", "G3")]
@@ -35,15 +38,41 @@ _ABLATION_PAIRS = [("G0", "G1"), ("G1", "G2"), ("G2", "G3"), ("G0", "G3")]
 _SCORECARD_FIELDS = [f.name for f in fields(Scorecard) if f.name != "not_yet_computable"]
 
 
-def write_run_table(scenario_id: str, results: dict[str, list[Scorecard]], csv_path: str) -> None:
+def write_run_table(
+    scenario_id: str, results: dict[str, list[Scorecard]], csv_path: str, trace_dir: str
+) -> None:
     """One row per (config, repetition) — design doc §16's own comparison table,
-    ready for a researcher to load into pandas/R/statsmodels directly."""
+    plus that run's process input and execution result (TraceRun.initial_variables/
+    final_variables, re-read from the same trace file run_repetition already wrote)
+    flattened into input_<key>/output_<key> columns. Column sets can differ across
+    rows (e.g. a rejected-at-intake case never reaches the fields a scored one has);
+    missing ones are blank rather than shrinking the header to the intersection."""
+    rows: list[dict[str, Any]] = []
+    input_keys: set[str] = set()
+    output_keys: set[str] = set()
+    for config, cards in results.items():
+        for i, card in enumerate(cards):
+            run = TraceRun.load(trace_path_for(trace_dir, scenario_id, config, i))
+            inputs = run.initial_variables()
+            outputs = run.final_variables()
+            input_keys.update(inputs)
+            output_keys.update(outputs)
+            row: dict[str, Any] = {"scenario_id": scenario_id, "config": config, "repetition": i}
+            row.update({f: getattr(card, f) for f in _SCORECARD_FIELDS})
+            row.update({f"input_{k}": v for k, v in inputs.items()})
+            row.update({f"output_{k}": v for k, v in outputs.items()})
+            rows.append(row)
+
+    fieldnames = (
+        ["scenario_id", "config", "repetition"]
+        + _SCORECARD_FIELDS
+        + [f"input_{k}" for k in sorted(input_keys)]
+        + [f"output_{k}" for k in sorted(output_keys)]
+    )
     with open(csv_path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(["scenario_id", "config", "repetition", *_SCORECARD_FIELDS])
-        for config, cards in results.items():
-            for i, card in enumerate(cards):
-                writer.writerow([scenario_id, config, i, *(getattr(card, f) for f in _SCORECARD_FIELDS)])
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, restval="")
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _rate(values: list[bool | None]) -> float | None:

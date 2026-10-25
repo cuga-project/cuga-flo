@@ -78,6 +78,22 @@ class TraceRun:
                 return e["payload"].get("halt_reason")
         return None
 
+    def initial_variables(self) -> dict[str, Any]:
+        """The process input — CASE_START's payload, captured post any `__start__`
+        perturbation (see engine.py's run_instance)."""
+        for e in self.events:
+            if e["event_type"] == "CASE_START":
+                return dict(e["payload"].get("process_variables") or {})
+        return {}
+
+    def final_variables(self) -> dict[str, Any]:
+        """The execution result — CASE_COMPLETE's payload for a normal run,
+        CASE_HALTED's for a halted one (e.g. a hook's `terminate`)."""
+        for e in self.events:
+            if e["event_type"] in ("CASE_COMPLETE", "CASE_HALTED"):
+                return dict(e["payload"].get("process_variables") or {})
+        return {}
+
     def cycle_time_seconds(self) -> float | None:
         starts = [e["timestamp"] for e in self.events if e["event_type"] == "CASE_START"]
         ends = [

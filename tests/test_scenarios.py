@@ -170,16 +170,99 @@ def test_format_ablation_reports_only_pairs_present():
 
 def test_write_run_table_round_trips_via_csv():
     import csv as csv_module
+    import os
+
+    from cuga_flo.scenarios.runner import trace_path_for
 
     results = {"G0": [_card(goal_achieved=True, cycle_time_seconds=1.5)]}
+    trace_dir = tempfile.mkdtemp()
+    trace_path = trace_path_for(trace_dir, "S99", "G0", 0)
+    with open(trace_path, "w", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {
+                    "run_id": "r",
+                    "case_id": "r",
+                    "source": "simpn",
+                    "event_type": "CASE_START",
+                    "bpmn_element_id": "Start",
+                    "timestamp": 1.0,
+                    "payload": {"process_variables": {"applicant_id": "1234", "loan_amount": 1000}},
+                }
+            )
+            + "\n"
+        )
+        fh.write(
+            json.dumps(
+                {
+                    "run_id": "r",
+                    "case_id": "r",
+                    "source": "simpn",
+                    "event_type": "CASE_COMPLETE",
+                    "bpmn_element_id": "End",
+                    "timestamp": 2.0,
+                    "payload": {"process_variables": {"applicant_id": "1234", "credit_score": 0.84}},
+                }
+            )
+            + "\n"
+        )
+
     path = tempfile.mktemp()
-    write_run_table("S99", results, path)
+    write_run_table("S99", results, path, trace_dir)
     with open(path, encoding="utf-8") as fh:
         rows = list(csv_module.DictReader(fh))
     assert len(rows) == 1
     assert rows[0]["scenario_id"] == "S99"
     assert rows[0]["config"] == "G0"
     assert rows[0]["goal_achieved"] == "True"
+    assert rows[0]["input_applicant_id"] == "1234"
+    assert rows[0]["input_loan_amount"] == "1000"
+    assert rows[0]["output_credit_score"] == "0.84"
+    os.remove(trace_path)
+
+
+def test_write_run_table_blanks_variable_keys_other_runs_dont_have():
+    """Different configs/scenarios can reach different process variables (e.g. a
+    case rejected at intake never reaches the fields a scored one has) — the
+    header is the union across every row, not the intersection, and a row missing
+    a key gets a blank cell rather than shrinking the whole table's columns."""
+    import csv as csv_module
+
+    from cuga_flo.scenarios.runner import trace_path_for
+
+    def _write_trace(trace_dir, config, inputs, outputs):
+        path = trace_path_for(trace_dir, "S99", config, 0)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(
+                json.dumps(
+                    {"run_id": "r", "case_id": "r", "source": "simpn", "event_type": "CASE_START",
+                     "bpmn_element_id": "Start", "timestamp": 1.0, "payload": {"process_variables": inputs}}
+                ) + "\n"
+            )
+            fh.write(
+                json.dumps(
+                    {"run_id": "r", "case_id": "r", "source": "simpn", "event_type": "CASE_COMPLETE",
+                     "bpmn_element_id": "End", "timestamp": 2.0, "payload": {"process_variables": outputs}}
+                ) + "\n"
+            )
+
+    trace_dir = tempfile.mkdtemp()
+    _write_trace(trace_dir, "G0", {"applicant_id": "1234"}, {"credit_score": 0.84})
+    _write_trace(trace_dir, "G1", {"applicant_id": "5678", "only_in_g1": "x"}, {"decision": "reject"})
+
+    results = {
+        "G0": [_card(goal_achieved=True)],
+        "G1": [_card(goal_achieved=False)],
+    }
+    path = tempfile.mktemp()
+    write_run_table("S99", results, path, trace_dir)
+    with open(path, encoding="utf-8") as fh:
+        rows = {r["config"]: r for r in csv_module.DictReader(fh)}
+
+    assert rows["G0"]["input_only_in_g1"] == ""
+    assert rows["G0"]["output_decision"] == ""
+    assert rows["G1"]["input_only_in_g1"] == "x"
+    assert rows["G1"]["output_credit_score"] == ""
 
 
 if __name__ == "__main__":

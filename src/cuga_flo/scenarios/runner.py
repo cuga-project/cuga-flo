@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
 import yaml
 
 from cuga_flo.evaluation.metrics import Scorecard, evaluate
@@ -36,6 +35,14 @@ from cuga_flo.scenarios.schema import Scenario
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_PORT = 8082
+
+
+def trace_path_for(trace_dir: str, scenario_id: str, config: str, rep: int) -> str:
+    """One dedicated trace file per (scenario, config, repetition) — see
+    run_repetition's docstring for why. Shared with analysis.write_run_table, which
+    re-reads these same files to pull each run's input/output process variables
+    into the CSV."""
+    return str(Path(trace_dir) / f"{scenario_id}__{config}__rep{rep}.jsonl")
 
 
 def load_scenario(path: str) -> Scenario:
@@ -89,22 +96,47 @@ class ServiceHandle:
             raise RuntimeError(f"build_simpn_app.sh failed for {config_path}:\n{result.stderr[-4000:]}")
 
     def start(self, timeout: float = 60.0) -> None:
+        """Found live: this used to poll GET /health on `self.port` to detect
+        readiness. That's fooled by a *race*, not just a clean failure: if
+        something else (e.g. a service started manually in another terminal, per
+        CLAUDE.md's three-step workflow) already held the port, the health check
+        could succeed against THAT other listener before our own (slower —
+        cold venv, BPMN parse, DecProblem build) subprocess even reached its own
+        bind() call, which then fails moments later with nobody watching anymore.
+        `self.process.poll()` alone doesn't close this gap either, since it's
+        checked *before* the (already-misleading) health request, not after.
+
+        Fix: wait for OUR OWN subprocess's own startup line
+        (`server.serve`'s "[simpn-runtime] serving process ...", redirected into
+        `service.log`) instead of hitting the network port at all. That line can
+        only be written by a process that itself bound successfully, so there is
+        no other listener to be fooled by."""
+        # A file, not subprocess.PIPE: a long matrix can make the service log a lot
+        # over its lifetime, and nothing here ever drains a PIPE after start()
+        # returns — an unread pipe filling up would eventually block the service's
+        # own stdout writes and hang the run.
+        log_path = self.out_dir / "service.log"
+        log_file = open(log_path, "w", encoding="utf-8")
         self.process = subprocess.Popen(
             [str(self.out_dir / "run.sh")],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
         )
+        log_file.close()
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            try:
-                resp = httpx.get(f"http://127.0.0.1:{self.port}/health", timeout=1.0)
-                if resp.status_code == 200:
-                    return
-            except httpx.HTTPError:
-                pass
-            time.sleep(0.5)
+            output = log_path.read_text(encoding="utf-8", errors="replace")
+            if "[simpn-runtime] serving process" in output:
+                return
+            if self.process.poll() is not None:
+                raise RuntimeError(
+                    f"SimPN service subprocess on port {self.port} exited early (code "
+                    f"{self.process.returncode}) — port likely already held by another "
+                    f"process (e.g. one started manually in another terminal):\n{output[-2000:]}"
+                )
+            time.sleep(0.2)
         self.stop()
-        raise RuntimeError(f"SimPN service on port {self.port} did not become healthy within {timeout}s")
+        raise RuntimeError(f"SimPN service on port {self.port} did not start within {timeout}s")
 
     def stop(self) -> None:
         if self.process is None:
@@ -167,7 +199,7 @@ def run_matrix(
         try:
             scorecards = []
             for rep in range(repetitions):
-                trace_path = str(Path(trace_dir) / f"{scenario.scenario_id}__{config}__rep{rep}.jsonl")
+                trace_path = trace_path_for(trace_dir, scenario.scenario_id, config, rep)
                 scorecards.append(run_repetition(str(config_path), scenario, trace_path))
             results[config] = scorecards
         finally:

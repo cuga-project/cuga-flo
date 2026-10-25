@@ -29,7 +29,7 @@ def run(
     print()
     print(format_ablation(aggregate(results)))
     if csv_path:
-        write_run_table(scenario.scenario_id, results, csv_path)
+        write_run_table(scenario.scenario_id, results, csv_path, trace_dir)
         print(f"\nPer-run table written to {csv_path}")
     return 0
 

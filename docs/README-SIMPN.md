@@ -328,7 +328,11 @@ of `initial_state` rather than inventing a value) fixed it in the next run.
 comparison table: per-config aggregates (Goal Achievement Rate, mean decision
 utility, mean intervention F1, mean cycle time) and the G0→G1→G2→G3 ΔGAR ablation
 (§16.4) — always printed. `--csv PATH` writes one row per (config, repetition),
-exactly §16's own comparison table, ready to load into pandas/R/statsmodels.
+§16's own comparison table plus that run's actual process input and execution
+result flattened into `input_<key>`/`output_<key>` columns (read back from the
+run's own trace via `TraceRun.initial_variables`/`final_variables` — see
+`runner.py`'s `trace_path_for` for how the CSV writer locates the right file),
+ready to load into pandas/R/statsmodels.
 
 What this deliberately does **not** do is fit a real mixed-effects model (§16.1-
 §16.3) or test the `AutonomyLevel × PerturbationSeverity` interaction (§16.3) — see

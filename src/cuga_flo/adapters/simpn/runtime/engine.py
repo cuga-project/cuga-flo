@@ -484,7 +484,9 @@ def build_problem(
                     check_point(state, _eid, "enter")
                     state["execution_path"] = state["execution_path"] + [_eid]
                     state["is_complete"] = True
-                    trace_control_point(state, "CASE_COMPLETE", _eid, {})
+                    trace_control_point(
+                        state, "CASE_COMPLETE", _eid, {"process_variables": dict(state["process_variables"])}
+                    )
                     return [SimToken(state)]
 
                 return behavior
@@ -563,7 +565,9 @@ def run_instance(
         source="simpn",
         event_type="CASE_START",
         bpmn_element_id=process.start_event,
-        payload={},
+        # The process input, post any __start__ perturbation — see
+        # TraceRun.initial_variables, which reads this back for the per-run CSV.
+        payload={"process_variables": dict(state["process_variables"])},
     )
 
     start_place.put(state)
@@ -582,7 +586,7 @@ def run_instance(
             source="simpn",
             event_type="CASE_HALTED",
             bpmn_element_id=state["execution_path"][-1] if state["execution_path"] else "",
-            payload={"halt_reason": state["halt_reason"]},
+            payload={"halt_reason": state["halt_reason"], "process_variables": dict(state["process_variables"])},
         )
 
     if process_key:

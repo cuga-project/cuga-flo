@@ -17,11 +17,17 @@
 >   the G0 story for the regulatory-restriction scenario in Milestone 2's
 >   verification result — see that section's as-built note and Milestone 4.
 > - **Milestone 5 — per-app `formulas.py` instead of a shared adapter registry**
->   (see the new section at the end): Milestone 4 shipped `credit_score_formula`
+>   (see that section): Milestone 4 shipped `credit_score_formula`
 >   inside the generic `src/cuga_flo/adapters/simpn/runtime/` package; moved to
 >   `applications/loan_approval_simpn/config/formulas.py`, loaded dynamically by
 >   file path, so a second app's formula never requires editing shared adapter
 >   code.
+> - **Milestone 6 — per-run process input/output in the `--csv` export, and a
+>   real port-race bug found verifying it** (see the new section at the end):
+>   `input_<key>`/`output_<key>` columns, read back from each run's own trace;
+>   and a fix for `ServiceHandle.start()` silently validating against a
+>   *different*, already-running SimPN service on the same port instead of its
+>   own (just-failed) subprocess — found live, while re-verifying this feature.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
@@ -626,3 +632,88 @@ exactly the coupling the per-app config split exists to avoid.
   `intervention_f1` results as before this refactor (`True`/`1.0`/`None` and
   `False`/`1.0`/`0.0` respectively) — confirming the relocation changed nothing
   observable about the formula's behavior, only where its code lives.
+
+## Milestone 6 — per-run process input/output in `--csv`, and a port-race bug found verifying it
+
+### The gap
+
+The `--csv` export (Milestone 3) wrote every `Scorecard` field — whether a run
+succeeded, its cycle time, its intervention F1 — but nothing about *what the
+run actually did*: which applicant, what credit score it computed, what it
+decided. A researcher loading the CSV into pandas couldn't connect a
+`goal_achieved=False` row back to the applicant profile that produced it
+without separately re-opening that run's trace file by hand.
+
+### Implementation
+
+- `src/cuga_flo/adapters/simpn/runtime/engine.py` — `CASE_START`'s trace
+  payload now carries `process_variables` (the process input, post any
+  `__start__` perturbation); `CASE_COMPLETE`'s and `CASE_HALTED`'s both carry
+  the final `process_variables` (the execution result — a halted case's own
+  state, same as a completed one's, just via the other terminal event).
+- `src/cuga_flo/evaluation/trace_run.py` — `TraceRun.initial_variables()`
+  (reads `CASE_START`'s payload) and `TraceRun.final_variables()` (reads
+  `CASE_COMPLETE`'s, falling back to `CASE_HALTED`'s).
+- `src/cuga_flo/scenarios/runner.py` — factored the per-repetition trace path
+  naming (`{scenario_id}__{config}__rep{rep}.jsonl`) into a shared
+  `trace_path_for(...)` function, so `analysis.py` can locate and re-read the
+  same files `run_repetition` already wrote.
+- `src/cuga_flo/scenarios/analysis.py` — `write_run_table` now takes
+  `trace_dir`, re-loads each run's `TraceRun`, and flattens
+  `initial_variables()`/`final_variables()` into `input_<key>`/`output_<key>`
+  columns via `csv.DictWriter` with a union-of-keys header (different
+  configs/scenarios can reach different variables — e.g. identity-unverified
+  vs. a fully-scored case — so the header is the union across all rows, and a
+  row missing a key gets a blank cell rather than shrinking the table).
+
+### A real bug found re-verifying this live
+
+Re-running `run-scenario` against port 8082 while a *different*,
+separately-started SimPN service (from an unrelated interactive debugging
+session) was already listening there produced a trace with empty
+`CASE_START`/`CASE_COMPLETE` payloads — looking exactly like the fix hadn't
+taken effect. It had; the actual bug was in `ServiceHandle.start()`
+(Milestone 2): it polled `GET /health` on the target port to decide the
+service was ready, with no check that *its own* subprocess was the one
+answering. If another process already held the port, the new subprocess
+would fail to bind and exit — but its own startup (cold venv, BPMN parse,
+`DecProblem` build) is slower than the pre-existing listener's instant
+response, so the health check would succeed against the *other* service
+before ours had even reached its own (soon-to-fail) bind call. The whole
+repetition matrix then silently ran against a stale, unrelated service with
+no error at all. Confirmed the race concretely: a direct Python-level test
+showed `start()` return "success" while `lsof` showed only the old PID
+actually listening on the port, and the new subprocess sat alive-but-silent
+for several seconds before crashing with `OSError: [Errno 48] Address already
+in use` — well after `start()` had already returned.
+
+Fixed by abandoning the network health check entirely in favor of a
+deterministic one: wait for *our own* subprocess's own stdout to contain its
+startup line (`server.serve`'s `"[simpn-runtime] serving process ..."`,
+redirected into a per-build `service.log` instead of `subprocess.PIPE`, since
+nothing was draining a PIPE after `start()` returned and a long matrix run
+logging enough could eventually block the service's own writes). That line
+can only be written by a process that itself bound successfully, so there is
+no other listener left to be fooled by. `self.process.poll()` is still
+checked on each loop iteration for a fast, clear error if the subprocess dies
+before ever producing that line.
+
+### Verification
+
+- `tests/test_simpn_adapter.py`: `test_initial_and_final_variables_read_the_case_start_and_complete_payloads`,
+  `test_final_variables_falls_back_to_case_halted_when_terminated`, and
+  `test_run_instance_populates_case_start_and_complete_with_real_variables`
+  (the real engine wiring end to end, not just a hand-written trace fixture).
+- `tests/test_scenarios.py`: `test_write_run_table_round_trips_via_csv` updated
+  for the new `trace_dir` parameter and `input_`/`output_` columns;
+  `test_write_run_table_blanks_variable_keys_other_runs_dont_have` covers the
+  union-header/blank-cell behavior across two configs with disjoint variable
+  sets. 63/63 passing across the full suite.
+- Live: ran `loan_approval_simpn`'s S01-nominal under G0 with `--csv`, on a
+  cleanly-freed port 8082 — `input_applicant_id`, `input_credit_history`,
+  `output_credit_score: 0.84` (the Milestone 4 formula's real output), and
+  every other process variable all appeared correctly in the generated CSV.
+  Separately reproduced the port-race bug live (a stale service from an
+  unrelated debugging session on the same port), confirmed the old code
+  silently validated against it, confirmed the fix now raises a clear
+  `OSError`-quoting error instead.

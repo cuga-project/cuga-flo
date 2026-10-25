@@ -373,10 +373,21 @@ layers three more views on top automatically:
    step, the direct answer to "what did adding this layer of autonomy buy us?"
 
 `--csv PATH` additionally writes one row per `(config, repetition)` with every
-scorecard field — the raw material for anything beyond what's printed (a pandas
-notebook, a spreadsheet, a proper statistical model once you have enough
-repetitions to justify fitting one — see README-SIMPN.md's "Comparative analysis"
-section for exactly what's intentionally not built yet and why).
+scorecard field, plus that run's actual process input and execution result —
+`input_<key>`/`output_<key>` columns, one pair per process variable, read back
+from the run's own trace file (`TraceRun.initial_variables`/`final_variables`;
+see §2's `formula:` note for where these variables come from on the engine
+side). For `loan_approval_simpn` that means `input_applicant_id`,
+`input_credit_history`, `output_credit_score`, `output_decision`, and so on —
+not just whether the run succeeded, but which applicant and what it actually
+decided. Different configs or scenarios can reach different variables (a case
+rejected at intake never reaches the fields a scored one has); the header is
+the union across every row, and a row missing a key gets a blank cell rather
+than shrinking the whole table's columns. This is the raw material for anything
+beyond what's printed (a pandas notebook, a spreadsheet, a proper statistical
+model once you have enough repetitions to justify fitting one — see
+README-SIMPN.md's "Comparative analysis" section for exactly what's
+intentionally not built yet and why).
 
 ---
 
@@ -440,8 +451,12 @@ df = pd.read_csv("traces/S02_runs.csv")
 df.groupby("config")[["goal_achieved", "cycle_time_seconds"]].mean()
 ```
 
-Every `Scorecard` field is a column, correctly typed once pandas parses it. This is
-the point to reach for a confidence interval, a plot across more scenarios, or
+Every `Scorecard` field is a column, correctly typed once pandas parses it, plus
+`input_<key>`/`output_<key>` columns for the run's actual process variables —
+`df[["config", "input_applicant_id", "output_credit_score", "output_decision"]]`
+answers "what did each config actually decide for each applicant?" directly,
+without re-opening individual trace files. This is the point to reach for a
+confidence interval, a plot across more scenarios, or
 (once you have enough repetitions to justify it — see §6) a real statistical model.
 
 ### What's still out of scope for review

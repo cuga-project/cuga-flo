@@ -375,6 +375,61 @@ def test_trace_run_loads_only_the_requested_run_id():
     assert len(run.events) == 1
 
 
+def test_initial_and_final_variables_read_the_case_start_and_complete_payloads():
+    """Backs the --csv export's input_<key>/output_<key> columns (design doc §16's
+    per-run table) — a researcher needs the applicant's actual profile and the
+    actual decision, not just the Scorecard's aggregate metrics."""
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(
+        sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start",
+        payload={"process_variables": {"applicant_id": "1234", "loan_amount": 1000}},
+    )
+    simpn_trace.emit(
+        sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End",
+        payload={"process_variables": {"applicant_id": "1234", "credit_score": 0.84, "decision": "approve"}},
+    )
+    sink.close()
+
+    run = TraceRun.load(path)
+    assert run.initial_variables() == {"applicant_id": "1234", "loan_amount": 1000}
+    assert run.final_variables() == {"applicant_id": "1234", "credit_score": 0.84, "decision": "approve"}
+
+
+def test_final_variables_falls_back_to_case_halted_when_terminated():
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(
+        sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start",
+        payload={"process_variables": {"applicant_id": "9999"}},
+    )
+    simpn_trace.emit(
+        sink, run_id="r", case_id="r", source="simpn", event_type="CASE_HALTED", bpmn_element_id="T1",
+        payload={"halt_reason": "policy halt", "process_variables": {"applicant_id": "9999", "flagged": True}},
+    )
+    sink.close()
+
+    run = TraceRun.load(path)
+    assert run.final_variables() == {"applicant_id": "9999", "flagged": True}
+
+
+def test_run_instance_populates_case_start_and_complete_with_real_variables(process, mcp_bridge):
+    """The actual engine wiring, not just a hand-written trace fixture — proves
+    make_task_behavior/make_end_behavior/run_instance all thread process_variables
+    into the trace, end to end."""
+    mcp_bridge["hook_action"].update(action="continue")
+    mcp_bridge["route_choice"]["flow"] = "f2"
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    variables = {"cugaMcpUrl": mcp_bridge["url"], "cugaProcessKey": "k", "seed_var": "abc"}
+    engine.run_instance(process, {}, variables, trace_sink=sink)
+    sink.close()
+
+    run = TraceRun.load(path)
+    assert run.initial_variables() == {"seed_var": "abc"}
+    assert run.final_variables()["credit_score"] == 0.8  # set by execute_task's canned response
+
+
 # ── Perturbations ───────────────────────────────────────────────────────────────
 
 
