@@ -112,13 +112,20 @@ the same YAML value can't mean two different things on two different engines:
 `tool:` names an **externally-injected** Python callable (the LangGraph engine's
 pattern — a caller constructing `FlowAgent` supplies `tools={name: fn}`; there is
 no pure-YAML path to it for any engine today), while `formula:` names a
-deterministic computation the **engine itself** provides, built in — looked up by
-name in a small registry shipped with that engine's own code
-(`src/cuga_flo/adapters/simpn/runtime/formulas.py` for SimPN). `G0_config.yaml`'s
+deterministic computation looked up by name in **the app's own `formulas.py`**
+— `applications/loan_approval_simpn/config/formulas.py`, staged into
+`build/simpn/<app-name>/` alongside `simpn_parameters.yaml` and loaded by file
+path at service startup (`cuga_flo.adapters.simpn.runtime.formulas.load_registry`).
+This is deliberately per-app, not a shared registry baked into the generic
+adapter code (`src/cuga_flo/adapters/simpn/runtime/`) — a formula is business
+logic belonging to one demo, the same reason its BPMN and policies already live
+under `applications/<app>/`, not under the adapter. `G0_config.yaml`'s
 `Activity_0oydey5` task uses `formula: "credit_score_formula"` — a crude but real
 approximation of `policies/task-credit_check.md`'s scoring rubric, run with no LLM
 and no MCP call at all, giving G0 *some* conventional rule instead of none (see
 §7 for why that distinction turned out to matter for how a result should be read).
+An app with no native formulas just omits `config/formulas.py` entirely — the
+field and the file are both optional.
 
 ### Turning this into a runnable service
 

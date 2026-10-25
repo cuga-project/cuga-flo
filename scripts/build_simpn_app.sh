@@ -124,6 +124,11 @@ PY
 
 cp "$SIMPN_PARAMS" "$OUT_DIR/simpn_parameters.yaml"
 
+# formulas.py is optional — most tasks don't need a native formula: field, and
+# an app with none of them just skips this.
+APP_FORMULAS="$APP_DIR/config/formulas.py"
+[[ -f "$APP_FORMULAS" ]] && cp "$APP_FORMULAS" "$OUT_DIR/formulas.py"
+
 echo "  app     $APP_NAME"
 echo "  out     $OUT_DIR"
 echo "  port    $HTTP_PORT"

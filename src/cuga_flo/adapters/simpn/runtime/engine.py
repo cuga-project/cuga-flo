@@ -47,8 +47,6 @@ from collections.abc import Callable
 from typing import Any
 
 from simpn.simulator import DecProblem, SimToken
-
-from . import formulas
 from . import perturbations as _perturbations
 from . import trace as _trace
 
@@ -128,7 +126,12 @@ def eval_condition(condition: str | None, variables: dict[str, Any]) -> bool:
 class ProcessModel:
     """Thin view over the BPMNProcess + engine-config JSON this service loads at build time."""
 
-    def __init__(self, process_model: dict, engine_config: dict):
+    def __init__(
+        self,
+        process_model: dict,
+        engine_config: dict,
+        formula_registry: dict[str, Callable[[dict], dict]] | None = None,
+    ):
         self.id = process_model["id"]
         self.name = process_model["name"]
         self.elements: dict[str, dict] = process_model["elements"]
@@ -146,9 +149,12 @@ class ProcessModel:
 
         self.agentic_task_ids: set[str] = set(engine_config.get("agentic_task_ids", []))
         self.decision_gateway_ids: set[str] = set(engine_config.get("decision_gateway_ids", []))
-        # A native task's own built-in deterministic computation — opposite of
-        # `tool:`'s externally-injected callable; see TaskConfig.formula's docstring.
+        # A native task's own deterministic computation — opposite of `tool:`'s
+        # externally-injected callable; see TaskConfig.formula's docstring. The
+        # name is config (engine_config); the actual function comes from this
+        # app's own formulas.py, loaded by __main__.py and passed in here.
         self.native_formulas: dict[str, str] = engine_config.get("native_formulas", {})
+        self.formula_registry: dict[str, Callable[[dict], dict]] = formula_registry or {}
         self.task_instructions: dict[str, str] = engine_config.get("task_instructions", {})
         self.flow_conditions: dict[str, str] = engine_config.get("flow_conditions", {})
         self.hooks: dict[str, dict] = {
@@ -368,9 +374,10 @@ def build_problem(
                 state["process_variables"] = result.get("process_variables", state["process_variables"])
                 state["task_results"].update(result.get("task_results", {}))
             elif formula_name:
-                # The engine's own built-in deterministic computation — no MCP
-                # call, no CUGA FLO process involved at all. See formulas.py.
-                fn = formulas.REGISTRY.get(formula_name)
+                # A deterministic computation this app's own formulas.py
+                # provides — no MCP call, no CUGA FLO process involved at all.
+                # See cuga_flo.adapters.simpn.runtime.formulas' docstring.
+                fn = process.formula_registry.get(formula_name)
                 if fn is None:
                     trace_control_point(
                         state, "FORMULA_NOT_FOUND", eid, {"formula": formula_name}

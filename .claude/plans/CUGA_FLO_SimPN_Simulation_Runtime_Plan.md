@@ -11,11 +11,17 @@
 >   (aggregates + ablation + CSV export), not a fitted mixed-effects model — see
 >   that section for exactly why.
 > - **Milestone 4 — native `formula:` for a task running with no agent at all**
->   (see the new section at the end): closes a real gap the design doc's own
+>   (see the section below): closes a real gap the design doc's own
 >   framing of G0 implied but this build never had — a "conventional BPMN/BPS"
 >   task with zero deterministic logic, not just zero agentic reasoning. Changes
 >   the G0 story for the regulatory-restriction scenario in Milestone 2's
 >   verification result — see that section's as-built note and Milestone 4.
+> - **Milestone 5 — per-app `formulas.py` instead of a shared adapter registry**
+>   (see the new section at the end): Milestone 4 shipped `credit_score_formula`
+>   inside the generic `src/cuga_flo/adapters/simpn/runtime/` package; moved to
+>   `applications/loan_approval_simpn/config/formulas.py`, loaded dynamically by
+>   file path, so a second app's formula never requires editing shared adapter
+>   code.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
@@ -489,9 +495,14 @@ contract spelling out the distinction so neither field's meaning drifts later.
   `native_formulas: {task_id: formula_name}` map, populated only for tasks
   that aren't agentic (mirrors how `tool_tasks` is already extracted in the
   same branch).
-- `src/cuga_flo/adapters/simpn/runtime/formulas.py` (new) — a small
-  `REGISTRY: dict[str, Callable[[dict], dict]]`, today holding one entry:
-  `credit_score_formula`, a deterministic approximation of
+> **As-built update (Milestone 5):** the shared registry this next bullet
+> describes moved out of the generic adapter package into the app's own
+> `config/formulas.py` — see Milestone 5. The formula's content below is
+> unchanged; only *where the function lives* changed.
+
+- `src/cuga_flo/adapters/simpn/runtime/formulas.py` (now relocated — see the
+  as-built note above) — a small `REGISTRY: dict[str, Callable[[dict], dict]]`,
+  today holding one entry: `credit_score_formula`, a deterministic approximation of
   `policies/task-credit_check.md`'s rubric (payment history 35%,
   debt-to-income 30%, length of credit history 15%, credit mix 10%, recent
   enquiries 10%; identity-unverified and no-credit-history edge cases;
@@ -556,3 +567,62 @@ positive phrase matches. Regression test:
   and the >$50k stricter-weighting case. 56/56 passing across the full suite.
 - `docs/running-simulation-experiments.md` and `docs/README-SIMPN.md` updated
   to document the `formula:` field and its effect on the G0 story.
+
+## Milestone 5 — per-app `formulas.py` instead of a shared adapter registry
+
+### The gap
+
+Milestone 4 shipped `credit_score_formula` and its `REGISTRY` inside
+`src/cuga_flo/adapters/simpn/runtime/formulas.py` — the generic SimPN adapter
+package, alongside `engine.py`, `server.py`, `mcp_client.py`, none of which
+mention "credit" or "loan" anywhere. The user asked directly: wouldn't it make
+more sense for each app to own its own `formulas.py`, the same way it already
+owns `simpn_parameters.yaml`? It would — `build_simpn_app.sh` already stages
+`simpn_parameters.yaml`, the BPMN, and the policies per-app into
+`build/simpn/<app-name>/`; `formulas.py` living centrally instead broke that
+pattern and meant a second app's formula would require editing shared adapter
+code and growing one `REGISTRY` dict for every app that ever uses SimPN —
+exactly the coupling the per-app config split exists to avoid.
+
+### Implementation
+
+- `src/cuga_flo/adapters/simpn/runtime/formulas.py` — stripped down to a
+  single generic function, `load_registry(path: Path) -> dict[str, Callable]`:
+  dynamically loads a module from a file path (stdlib `importlib.util`) and
+  returns its `REGISTRY`, or `{}` if the file doesn't exist. No app-specific
+  content remains in this package.
+- `applications/loan_approval_simpn/config/formulas.py` (new) — the actual
+  `credit_score_formula` + `REGISTRY`, moved verbatim from the old shared file,
+  now owned by the app alongside its BPMN/policies/`simpn_parameters.yaml`.
+- `src/cuga_flo/adapters/simpn/runtime/engine.py` — `ProcessModel.__init__`
+  gains `formula_registry: dict | None = None`, stored as
+  `self.formula_registry`; `make_task_behavior()`'s formula branch now looks up
+  `process.formula_registry.get(formula_name)` instead of a module-level
+  `formulas.REGISTRY`.
+- `src/cuga_flo/adapters/simpn/runtime/__main__.py` — loads
+  `build_dir / "formulas.py"` via `formulas.load_registry(...)` and passes the
+  result into `ProcessModel(..., formula_registry=...)`.
+- `scripts/build_simpn_app.sh` — copies `$APP_DIR/config/formulas.py` into
+  `$OUT_DIR/formulas.py` if the app has one (optional — most apps won't).
+
+### Verification
+
+- `tests/test_simpn_adapter.py`'s formula-wiring tests now inject a trivial
+  stub `formula_registry` directly rather than relying on any real formula
+  content — the generic adapter's tests no longer need to know any specific
+  app's business logic. Two new tests cover `load_registry` itself: loading a
+  real file by path, and the missing-file → `{}` case.
+- The four `credit_score_formula`-specific tests moved out of
+  `test_simpn_adapter.py` into a new `tests/test_loan_approval_simpn_formulas.py`,
+  which loads the registry the real way (`load_registry` against
+  `applications/loan_approval_simpn/config/formulas.py`, not a plain import) —
+  proving the real loading path end-to-end, not just the formula's own logic.
+  59/59 passing across the full suite.
+- Live: rebuilt `build/simpn/loan_approval_simpn/` from scratch and confirmed
+  `formulas.py` was staged into the build output; started the service and
+  confirmed it came up healthy (it would have crashed at `load_registry` if
+  the staged file were broken); ran S01-nominal and S02-regulatory-restriction
+  under G0 via `cuga-flo run-scenario` and got the identical `goal`/`util`/
+  `intervention_f1` results as before this refactor (`True`/`1.0`/`None` and
+  `False`/`1.0`/`0.0` respectively) — confirming the relocation changed nothing
+  observable about the formula's behavior, only where its code lives.

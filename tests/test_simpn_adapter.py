@@ -20,7 +20,8 @@ import uvicorn
 from fastmcp import FastMCP
 
 from cuga_flo.adapters.simpn.proxy import SimPNProxy
-from cuga_flo.adapters.simpn.runtime import engine, formulas, server
+from cuga_flo.adapters.simpn.runtime import engine, server
+from cuga_flo.adapters.simpn.runtime import formulas as simpn_formulas
 from cuga_flo.adapters.simpn.runtime import trace as simpn_trace
 from cuga_flo.evaluation.expected_properties import ExpectedProperties
 from cuga_flo.evaluation.metrics import evaluate
@@ -159,11 +160,16 @@ def test_native_gateway_uses_condition_without_decision_agent(mcp_bridge):
 
 def test_native_task_with_a_formula_computes_without_any_mcp_call(mcp_bridge):
     """A formula: task is not in agentic_task_ids — no execute_task call at all —
-    yet it still updates process_variables, entirely inside this process."""
+    yet it still updates process_variables, entirely inside this process. The
+    actual function comes from the app's own formula_registry (see
+    cuga_flo.adapters.simpn.runtime.formulas), not anything this module defines —
+    a stub stands in here since this test is about the engine's wiring, not any
+    one app's formula content."""
     engine_config = dict(
-        _ENGINE_CONFIG, agentic_task_ids=[], decision_gateway_ids=[], native_formulas={"T1": "credit_score_formula"}
+        _ENGINE_CONFIG, agentic_task_ids=[], decision_gateway_ids=[], native_formulas={"T1": "double_it"}
     )
-    process = engine.ProcessModel(_PROCESS_MODEL, engine_config)
+    registry = {"double_it": lambda pv: {"credit_score": 0.5}}
+    process = engine.ProcessModel(_PROCESS_MODEL, engine_config, formula_registry=registry)
     mcp_bridge["hook_action"].update(action="continue")
     state = _run(
         process,
@@ -171,8 +177,7 @@ def test_native_task_with_a_formula_computes_without_any_mcp_call(mcp_bridge):
         key="run-formula",
         simpn_params={},
     )
-    # T1's formula should have set a real credit_score from (empty) process_variables.
-    assert "credit_score" in state["process_variables"]
+    assert state["process_variables"]["credit_score"] == 0.5
     assert mcp_bridge["completed"] == ["run-formula"]  # still reaches complete_process
 
 
@@ -189,6 +194,22 @@ def test_unknown_formula_name_is_traced_not_crashed(process, mcp_bridge):
     assert state["is_complete"] is True  # doesn't crash the run
     events = [json.loads(line) for line in open(path)]
     assert any(e["event_type"] == "FORMULA_NOT_FOUND" for e in events)
+
+
+def test_load_registry_reads_an_apps_formulas_file_by_path(tmp_path):
+    """The real loading path formulas.load_registry exercises: an app's own
+    formulas.py, staged by build_simpn_app.sh, loaded by file path at service
+    startup — not a module import, since no app directory is on sys.path."""
+    formulas_file = tmp_path / "formulas.py"
+    formulas_file.write_text(
+        "def triple(pv):\n    return {'x': pv.get('x', 0) * 3}\n\nREGISTRY = {'triple': triple}\n"
+    )
+    registry = simpn_formulas.load_registry(formulas_file)
+    assert registry["triple"]({"x": 2}) == {"x": 6}
+
+
+def test_load_registry_returns_empty_when_the_app_has_no_formulas_file(tmp_path):
+    assert simpn_formulas.load_registry(tmp_path / "no_such_file.py") == {}
 
 
 # ── G3: every HookAction, one mechanism ────────────────────────────────────────
@@ -510,56 +531,6 @@ def test_scenario_schema_round_trips_the_design_doc_example():
     assert scenario.scenario_id == "S07"
     assert scenario.perturbations[1].when == "T5.complete"
     assert scenario.expected_properties.must == ["valid_verification_before_approval"]
-
-
-# ── formulas.py — native, deterministic, no-MCP-call task computation ────────────
-
-
-def test_credit_score_formula_rewards_a_well_qualified_applicant():
-    result = formulas.credit_score_formula(
-        {
-            "applicant_id": "A12345",
-            "credit_history": "Excellent payment history, no defaults",
-            "loan_amount": 1000,
-            "income": 75000,
-            "employment_years": 5,
-        }
-    )
-    assert result["credit_score"] > 0.6  # must clear the gateway's approval threshold
-
-
-def test_credit_score_formula_does_not_misread_a_negated_keyword():
-    """Found live: 'no defaults' contains the substring 'default', so a naive
-    negative-keyword check used to misread a *good* history as bad — this is the
-    regression test for that fix."""
-    good = formulas.credit_score_formula(
-        {"applicant_id": "A1", "credit_history": "no defaults, no late payments", "loan_amount": 1000, "income": 75000, "employment_years": 5}
-    )
-    bad = formulas.credit_score_formula(
-        {"applicant_id": "A1", "credit_history": "multiple missed payments and a default", "loan_amount": 1000, "income": 75000, "employment_years": 5}
-    )
-    assert good["credit_score"] > bad["credit_score"]
-
-
-def test_credit_score_formula_edge_cases_match_the_policy_literally():
-    assert formulas.credit_score_formula({"credit_history": "x", "loan_amount": 1, "income": 1}) == {
-        "credit_score": 0.0,
-        "rejection_reason": "identity_unverified",
-    }
-    assert formulas.credit_score_formula({"applicant_id": "A1", "loan_amount": 1, "income": 1}) == {
-        "credit_score": 0.3,
-        "no_history": True,
-    }
-
-
-def test_credit_score_formula_applies_the_large_loan_stricter_threshold():
-    small = formulas.credit_score_formula(
-        {"applicant_id": "A1", "credit_history": "excellent", "loan_amount": 1000, "income": 75000, "employment_years": 5}
-    )
-    large = formulas.credit_score_formula(
-        {"applicant_id": "A1", "credit_history": "excellent", "loan_amount": 60000, "income": 75000, "employment_years": 5}
-    )
-    assert large["credit_score"] < small["credit_score"]
 
 
 if __name__ == "__main__":

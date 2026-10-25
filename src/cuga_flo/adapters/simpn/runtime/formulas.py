@@ -1,112 +1,40 @@
 """
-Native formulas — deterministic computations a `mode: native` task can run
-entirely inside this service, with no MCP call and no CUGA FLO process involved at
-all. Distinct from `tool:` (an externally-injected Python callable the LangGraph
-engine supports — see `TaskConfig.formula`'s docstring in
-`src/cuga_flo/schemas/app_yaml_schema.py` for the full distinction): a formula here
-is built into the engine's own code, selected by name from the app's YAML
-(`formula: "<name>"`), never supplied by a caller.
+Loads an app's own `formulas.py` — the per-app registry of deterministic
+computations a `mode: native` task can run entirely inside this service, with no
+MCP call and no CUGA FLO process involved at all. Distinct from `tool:` (an
+externally-injected Python callable the LangGraph engine supports — see
+`TaskConfig.formula`'s docstring in `src/cuga_flo/schemas/app_yaml_schema.py` for
+the full distinction): a formula here is business logic, selected by name from the
+app's YAML (`formula: "<name>"`).
+
+This logic belongs to one specific app, not to this generic adapter — the same
+reason `simpn_parameters.yaml`, policies, and the BPMN already live under
+`applications/<app>/config/` rather than under this package. A single shared
+registry here would mean every app's formula gets added to code this package
+owns, coupling app-specific content to the generic SimPN engine plumbing.
+`scripts/build_simpn_app.sh` stages the app's own `config/formulas.py` (if one
+exists — a `formula:` field is optional) into `build/simpn/<app-name>/formulas.py`
+alongside its other config; `__main__.py` loads it from there, by path, at
+startup.
 
 Stdlib only — no `cuga_flo` import, same isolation rule as the rest of this
 package.
-
-This exists for the same reason the design doc frames "G0 — Legacy workflow" as
-following "conventional BPMN/BPS behavior," not as doing nothing: a real legacy
-system has *some* deterministic business rule, even a crude one, and G0 having no
-such rule for `loan_approval_simpn`'s credit check was a gap, not a deliberate
-design choice (`credit_score` just stayed at its YAML default of 0.0, making every
-G0 run reject unconditionally regardless of scenario — correct as an observation
-about G0's limits, but an overstatement of how badly a real legacy system would do).
 """
 
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
 from typing import Any, Callable
 
 
-def credit_score_formula(process_variables: dict[str, Any]) -> dict[str, Any]:
-    """
-    A crude, deterministic approximation of
-    `policies/task-credit_check.md`'s scoring rubric, for `loan_approval_simpn`'s
-    `Activity_0oydey5` when run natively (G0) — i.e. with no LLM at all.
-
-    The policy's two edge cases that are already deterministic rules (identity
-    unverified, no credit history) are implemented literally. The three factors
-    the policy asks an LLM to *judge* from free text (payment history, credit
-    mix, recent enquiries) have no structured data in this demo's process
-    variables to judge from either way — this uses a crude keyword heuristic for
-    payment history (the one factor `credit_history`'s free text actually
-    describes) and a flat neutral 0.5 for credit mix / recent enquiries, matching
-    what the real Task Agent itself typically assigns when neither factor is
-    mentioned (see docs/running-simulation-experiments.md's worked transcript).
-    Debt-to-income and length-of-credit-history (via `employment_years`, the same
-    proxy the LLM uses) are computed directly from structured fields — no
-    approximation needed there.
-
-    ponytail: this is intentionally crude, not a real credit-scoring model — its
-    only job is to give G0 *some* deterministic business logic instead of none,
-    so a G0-vs-G1+ comparison measures "conventional rule vs. real judgment," not
-    "no rule vs. real judgment." Upgrade path: replace with a real scoring table
-    if G0's baseline needs to be more faithful than this.
-    """
-    applicant_id = str(process_variables.get("applicant_id") or "").strip()
-    if not applicant_id:
-        return {"credit_score": 0.0, "rejection_reason": "identity_unverified"}
-
-    credit_history = str(process_variables.get("credit_history") or "").strip()
-    if not credit_history:
-        return {"credit_score": 0.3, "no_history": True}
-
-    loan_amount = float(process_variables.get("loan_amount") or 0)
-    income = float(process_variables.get("income") or 0)
-    employment_years = float(process_variables.get("employment_years") or 0)
-
-    # Positive phrases checked FIRST and given priority: "no defaults" contains the
-    # substring "default", so a naive negative-keyword-only check misreads a good
-    # history as bad — found by actually running this formula against this demo's
-    # own "Excellent payment history, no defaults" text before trusting it.
-    lowered = credit_history.lower()
-    positive_phrases = ("excellent", "good standing", "strong", "clean record", "no default", "no late", "no missed")
-    negative_keywords = ("default", "late", "missed", "delinquent", "collection", "bankrupt")
-    if any(p in lowered for p in positive_phrases):
-        payment_history = 0.95
-    elif any(w in lowered for w in negative_keywords):
-        payment_history = 0.2
-    else:
-        payment_history = 0.6  # genuinely unclear text — neither signal present
-
-    dti_ratio = loan_amount / income if income > 0 else 1.0
-    debt_to_income = max(0.0, 1.0 - dti_ratio)
-
-    length_of_history = min(employment_years / 7.0, 1.0)
-
-    credit_mix = 0.5
-    recent_enquiries = 0.5
-
-    # policy's "loan_amount > 50,000" edge case: debt-to-income gets +10pp, taken
-    # evenly from the other four factors so the weights still sum to 1.0.
-    weights = {
-        "payment_history": 0.35,
-        "debt_to_income": 0.30,
-        "length_of_history": 0.15,
-        "credit_mix": 0.10,
-        "recent_enquiries": 0.10,
-    }
-    if loan_amount > 50_000:
-        weights["debt_to_income"] += 0.10
-        for key in ("payment_history", "length_of_history", "credit_mix", "recent_enquiries"):
-            weights[key] -= 0.10 / 4
-
-    score = (
-        weights["payment_history"] * payment_history
-        + weights["debt_to_income"] * debt_to_income
-        + weights["length_of_history"] * length_of_history
-        + weights["credit_mix"] * credit_mix
-        + weights["recent_enquiries"] * recent_enquiries
-    )
-    return {"credit_score": round(min(max(score, 0.0), 1.0), 2)}
-
-
-REGISTRY: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
-    "credit_score_formula": credit_score_formula,
-}
+def load_registry(path: Path) -> dict[str, Callable[[dict[str, Any]], dict[str, Any]]]:
+    """Dynamically loads `path` as a module and returns its `REGISTRY` dict. An
+    app with no formulas (or no `formulas.py` at all) gets an empty registry —
+    any `formula:` reference then traces FORMULA_NOT_FOUND instead of crashing."""
+    if not path.exists():
+        return {}
+    spec = importlib.util.spec_from_file_location("app_formulas", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return getattr(module, "REGISTRY", {})

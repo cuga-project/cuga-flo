@@ -81,7 +81,12 @@ same semantics as Kogito's `POST /{processId}` for an automated process. Config 
   web-framework dependency for two routes — see [HTTP API](#http-api)).
 - **`trace.py`** — unified-trace event emission, independent of (but schema-compatible
   with) `cuga_flo.trace` on the main-process side; see [Unified trace](#unified-trace).
-- **`__main__.py`** — `python -m cuga_flo.adapters.simpn.runtime <build-dir> [--port N]`.
+- **`formulas.py`** — `load_registry(path)`, a generic loader (stdlib
+  `importlib`) for one specific app's own `config/formulas.py` — see the
+  "`formula:`" section below for why this is per-app rather than a shared
+  registry living here.
+- **`__main__.py`** — `python -m cuga_flo.adapters.simpn.runtime <build-dir> [--port N]`;
+  also loads `<build-dir>/formulas.py` (if present) via the above.
 
 ### `MCPFlowBridge.register_simpn_engine`
 
@@ -121,27 +126,36 @@ Distinct from `tool:` (`TaskConfig.tool`, LangGraph-only today): `tool:` names a
 **externally-injected** Python callable — the caller constructing `FlowAgent`
 supplies `tools={name: fn}`, and no engine's `FlowConfig.to_flow_agent()` dispatch
 actually threads a `tools=` dict through, so there is no pure-YAML path to it for
-*any* engine. `formula:` is the opposite: a deterministic computation the
-**engine itself** ships, selected by name, with the function never supplied by a
-caller. For SimPN, `make_task_behavior`'s native (non-agentic) branch looks up
-`process.native_formulas.get(eid)` in `runtime/formulas.py`'s `REGISTRY` and, if
-found, calls it directly with `state["process_variables"]` — no MCP call, no
-CUGA FLO process involved, the same locality the perturbation mechanism already
-has. An unregistered name doesn't crash the run; it emits a `FORMULA_NOT_FOUND`
-trace event and falls through unchanged, the same fallback-and-trace discipline
-`_resolve_hook_target` already uses.
+*any* engine. `formula:` is the opposite: a deterministic computation looked up
+by name, with the function never supplied by a caller — but it comes from **the
+app's own `formulas.py`**, not from the generic adapter code. For SimPN,
+`make_task_behavior`'s native (non-agentic) branch looks up
+`process.native_formulas.get(eid)` in `process.formula_registry`, a dict built
+at startup by `cuga_flo.adapters.simpn.runtime.formulas.load_registry`, which
+dynamically loads `build/<app-name>/formulas.py` — the app's
+`config/formulas.py`, staged there by `build_simpn_app.sh` the same way
+`simpn_parameters.yaml` is. Deliberately per-app rather than one shared registry
+inside `runtime/`: a formula is business logic belonging to one demo app, and a
+shared registry would mean every app's formula gets added to code the generic
+adapter owns — the same reason the BPMN and policies already live under
+`applications/<app>/`, not under the adapter. An app with no native formulas
+just has no `config/formulas.py`. An unregistered name doesn't crash the run; it
+emits a `FORMULA_NOT_FOUND` trace event and falls through unchanged, the same
+fallback-and-trace discipline `_resolve_hook_target` already uses.
 
 This exists because a native task doing *nothing* overstates how badly a real
 legacy system performs — the design doc frames G0 as following "conventional
-BPMN/BPS behavior," not as a no-op. `loan_approval_simpn`'s `G0_config.yaml` uses
-`formula: "credit_score_formula"` (a crude, keyword-and-arithmetic approximation
-of `policies/task-credit_check.md`'s scoring rubric) so G0 can compute a real,
-if rigid, credit score instead of leaving `credit_score` at its 0.0 default for
-every case. Found live, fixed in the same pass: the first version's keyword
-check for a bad payment history matched the substring `"default"` inside the
-phrase `"no defaults"`, scoring a genuinely good history as bad — fixed by
-checking positive phrases first, with a regression test
-(`test_credit_score_formula_does_not_misread_a_negated_keyword`).
+BPMN/BPS behavior," not as a no-op. `loan_approval_simpn`'s
+`config/formulas.py` provides `credit_score_formula` (a crude,
+keyword-and-arithmetic approximation of `policies/task-credit_check.md`'s
+scoring rubric), and `G0_config.yaml` references it via
+`formula: "credit_score_formula"`, so G0 can compute a real, if rigid, credit
+score instead of leaving `credit_score` at its 0.0 default for every case.
+Found live, fixed in the same pass: the first version's keyword check for a bad
+payment history matched the substring `"default"` inside the phrase
+`"no defaults"`, scoring a genuinely good history as bad — fixed by checking
+positive phrases first, with a regression test
+(`tests/test_loan_approval_simpn_formulas.py::test_does_not_misread_a_negated_keyword`).
 
 ### The full `HookAction` vocabulary, one mechanism
 
@@ -345,6 +359,7 @@ An app is authored entirely under `applications/<app-name>/`:
 │   ├── G0_config.yaml .. G3_config.yaml  autonomy-ladder variants — only the scenario runner uses these
 │   ├── BPMNdiagram.bpmn                the same clean model CUGA FLO itself parses
 │   ├── simpn_parameters.yaml           BPS durations — this engine's own file
+│   ├── formulas.py                     optional — native formula: lookups, this app's own
 │   └── expected_properties/*.yaml      oracle fixtures, one per case worth asserting on
 ├── scenarios/*.yaml                    frozen scenarios — see "Scenarios and the scenario runner" below
 └── policies/                           engine-independent markdown

@@ -5,6 +5,7 @@ Entry point for the Simulation Runtime Service: `python -m cuga_flo.adapters.sim
     process_model.json    BPMNProcess.to_dict(), dumped at build time (main venv)
     engine_config.json    FlowConfig.to_engine_config(), dumped at build time
     simpn_parameters.yaml BPS parameters (durations, ...) — this app's own file
+    formulas.py           this app's own native formulas, if it has any — optional
 
 Needs pyyaml (unlike the rest of this package) solely to read that one YAML file;
 everything else here is stdlib + simpn.
@@ -19,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from . import engine, server
+from . import engine, formulas, server
 
 
 def main(argv: list[str]) -> int:
@@ -34,8 +35,9 @@ def main(argv: list[str]) -> int:
     engine_config = json.loads((build_dir / "engine_config.json").read_text())
     simpn_params_path = build_dir / "simpn_parameters.yaml"
     simpn_params = yaml.safe_load(simpn_params_path.read_text()) if simpn_params_path.exists() else {}
+    formula_registry = formulas.load_registry(build_dir / "formulas.py")
 
-    process = engine.ProcessModel(process_model, engine_config)
+    process = engine.ProcessModel(process_model, engine_config, formula_registry=formula_registry)
     server.serve(process, simpn_params or {}, args.host, args.port)
     return 0
 
