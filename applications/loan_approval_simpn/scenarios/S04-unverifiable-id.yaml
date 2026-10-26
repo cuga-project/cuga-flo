@@ -1,0 +1,48 @@
+scenario_id: S04
+description: "An applicant submits a loan request with strong financials \u2014 high\
+  \ income, long employment history, and good credit history \u2014 that would normally\
+  \ result in approval. However, the application is flagged as unverifiable because\
+  \ the applicant's ID value is malformed (e.g. contains illegal characters or wrong\
+  \ format) and the applicant's last name is missing from the submitted data. Despite\
+  \ the fact that all other parameters (income, employment, credit history) point\
+  \ toward approval, the process must reject the application due to the identity verification\
+  \ failure, routing through the rejection path and sending a rejection letter rather\
+  \ than granting the loan."
+initial_state:
+  process_variables:
+    decision: undecided
+    manager_informed: false
+    applicant_name: 'Mickey'
+    applicant_id: ?32944252A#
+    loan_amount: 1000
+    credit_history: excellent
+    income: 120000
+    employment_years: 10
+  semantic:
+    applicant.identity.id_malformed: true
+    applicant.identity.last_name_missing: true
+    applicant.identity.verifiable: false
+    applicant.financials.strong: true
+  bps: {}
+perturbations:
+- when: Activity_0oydey5.complete
+  bps_change: {}
+  semantic_change:
+    applicant.identity.verifiable: false
+    credit_check.override_to_reject: true
+expected_properties:
+  eventually:
+  - case_resolved
+  - Activity_131ar38
+  must:
+  - Activity_0oydey5
+  - Activity_131ar38
+  - _D63C4A69-2BD5-4836-B86D-05397C0697CB
+  must_not:
+  - Activity_1h9ix55
+  acceptable_routes:
+    Flow_1jgea85: 1.0
+    Flow_0ybszcv: 0.0
+  intervention:
+    required_after:
+    - Flow_1e5ztf6
