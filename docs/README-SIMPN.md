@@ -294,8 +294,8 @@ Builds and starts each `G<n>_config.yaml`'s service in turn (`scripts/
 build_simpn_app.sh --config ...`), one at a time on the same port, stopped before
 the next — unattended N-repetitions-x-4-configs is the point, so this does not
 follow the manual three-terminal workflow `CLAUDE.md` documents for a single
-interactive run. Prints a progress line per `(config, repetition)` as it runs
-(`[G1] building and starting the SimPN service...`, then
+interactive run. Prints a progress line per `(config, scenario, repetition)`
+as it runs (`[G1] building and starting the SimPN service...`, then
 `[3/12] S02 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)`), then a
 `goal`/`util`/`interv_f1`/`cycle_s` comparison table across configs.
 `loan_approval_simpn/scenarios/S01-nominal.yaml` and `S02-regulatory-

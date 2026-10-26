@@ -239,7 +239,8 @@ rename away the `-draft` suffix once you're satisfied.
 
 ## 4. Configuring the number of simulation runs
 
-Two independent dimensions, both flags on `cuga-flo run-scenario`:
+Two independent dimensions, both flags on `cuga-flo run-scenario`, plus a third
+— which scenario(s) — set by the positional argument itself (§5):
 
 - **`--configs G0,G1,G2,G3`** — which autonomy levels to include (a comma-separated
   subset is fine, e.g. `--configs G0,G3` to skip G1/G2). Each named level needs a
@@ -247,10 +248,14 @@ Two independent dimensions, both flags on `cuga-flo run-scenario`:
 - **`--repetitions N`** — how many times to run *each* config against this
   scenario (default 1). Useful once task/decision/hook reasoning is stochastic
   enough that one run isn't representative.
+- **the scenario path** — one scenario YAML, or a directory of them to run every
+  `*.yaml` under it (§5's folder mode) — multiplies the matrix by however many
+  scenario files are found.
 
-Every `(config, repetition)` pair is one fully independent run: its own subprocess
-(no state — not even an in-memory cache — carries over from the previous
-repetition), its own trace file. Building the G0–G3 variants is covered in §2;
+Every `(scenario, config, repetition)` combination is one fully independent run:
+its own subprocess (no state — not even an in-memory cache — carries over from
+the previous repetition), its own trace file. Building the G0–G3 variants is
+covered in §2;
 concretely, for `loan_approval_simpn`, the four files differ only in
 `tasks:`/`gateways:`/`hooks:`:
 
