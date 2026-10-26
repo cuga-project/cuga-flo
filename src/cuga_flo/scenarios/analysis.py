@@ -24,7 +24,9 @@ yet either — scenarios here are qualitative, not severity-graded.
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass, fields
+from pathlib import Path
 from typing import Any
 
 from cuga_flo.evaluation.metrics import Scorecard
@@ -36,17 +38,51 @@ _ABLATION_PAIRS = [("G0", "G1"), ("G1", "G2"), ("G2", "G3"), ("G0", "G3")]
 # not_yet_computable is metadata about the scorecard, not a metric value — excluded
 # from the per-run CSV columns.
 _SCORECARD_FIELDS = [f.name for f in fields(Scorecard) if f.name != "not_yet_computable"]
+_TASK_ELEMENT_TYPES = {"task", "serviceTask", "userTask", "scriptTask", "manualTask"}
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _activity_columns(app_name: str) -> dict[str, str]:
+    """element_id -> CSV column name, one per BPMN task element (not gateways,
+    events, or hooks) — the fixed universe of "was this activity activated"
+    columns, same across every config/scenario for this app since the BPMN model
+    itself doesn't change across G0-G3 (only tasks:/gateways:/hooks: do).
+    Sanitized from the task's display name for readability; disambiguated by
+    appending the element id if two tasks happen to sanitize to the same name."""
+    from cuga_flo.engine.bpmn_parser import BPMNParser
+    from cuga_flo.engine.flow_config import FlowConfig
+
+    config_path = _REPO_ROOT / "applications" / app_name / "config" / f"{app_name}_config.yaml"
+    cfg = FlowConfig.from_yaml(str(config_path))
+    bpmn = BPMNParser().parse_file(cfg.get_bpmn_file())
+
+    def _slug(name: str, element_id: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "_", (name or element_id).strip().lower()).strip("_")
+        return slug or element_id.lower()
+
+    columns: dict[str, str] = {}
+    for element_id, element in bpmn.elements.items():
+        if element.element_type not in _TASK_ELEMENT_TYPES:
+            continue
+        column = f"activity_{_slug(element.name, element_id)}"
+        if column in columns.values():
+            column = f"activity_{_slug(element.name, element_id)}__{element_id}"
+        columns[element_id] = column
+    return columns
 
 
 def write_run_table(
-    scenario_id: str, results: dict[str, list[Scorecard]], csv_path: str, trace_dir: str
+    scenario_id: str, results: dict[str, list[Scorecard]], csv_path: str, trace_dir: str, app_name: str
 ) -> None:
     """One row per (config, repetition) — design doc §16's own comparison table,
     plus that run's process input and execution result (TraceRun.initial_variables/
     final_variables, re-read from the same trace file run_repetition already wrote)
-    flattened into input_<key>/output_<key> columns. Column sets can differ across
-    rows (e.g. a rejected-at-intake case never reaches the fields a scored one has);
-    missing ones are blank rather than shrinking the header to the intersection."""
+    flattened into input_<key>/output_<key> columns, plus one activity_<name>
+    boolean column per BPMN task element recording whether that specific run's
+    execution path reached it at all. Column sets can differ across rows (e.g. a
+    rejected-at-intake case never reaches the fields a scored one has); missing
+    ones are blank rather than shrinking the header to the intersection."""
+    activity_columns = _activity_columns(app_name)
     rows: list[dict[str, Any]] = []
     input_keys: set[str] = set()
     output_keys: set[str] = set()
@@ -57,10 +93,12 @@ def write_run_table(
             outputs = run.final_variables()
             input_keys.update(inputs)
             output_keys.update(outputs)
+            activated = set(run.execution_path())
             row: dict[str, Any] = {"scenario_id": scenario_id, "config": config, "repetition": i}
             row.update({f: getattr(card, f) for f in _SCORECARD_FIELDS})
             row.update({f"input_{k}": v for k, v in inputs.items()})
             row.update({f"output_{k}": v for k, v in outputs.items()})
+            row.update({col: (eid in activated) for eid, col in activity_columns.items()})
             rows.append(row)
 
     fieldnames = (
@@ -68,6 +106,7 @@ def write_run_table(
         + _SCORECARD_FIELDS
         + [f"input_{k}" for k in sorted(input_keys)]
         + [f"output_{k}" for k in sorted(output_keys)]
+        + sorted(activity_columns.values())
     )
     with open(csv_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames, restval="")

@@ -22,12 +22,14 @@
 >   `applications/loan_approval_simpn/config/formulas.py`, loaded dynamically by
 >   file path, so a second app's formula never requires editing shared adapter
 >   code.
-> - **Milestone 6 — per-run process input/output in the `--csv` export, and a
->   real port-race bug found verifying it** (see the new section at the end):
+> - **Milestone 6 — per-run process input/output/activity in the `--csv`
+>   export, and a real port-race bug found verifying it** (see that section):
 >   `input_<key>`/`output_<key>` columns, read back from each run's own trace;
->   and a fix for `ServiceHandle.start()` silently validating against a
->   *different*, already-running SimPN service on the same port instead of its
->   own (just-failed) subprocess — found live, while re-verifying this feature.
+>   `activity_<name>` boolean columns, one per BPMN task, read from the app's
+>   own BPMN file; and a fix for `ServiceHandle.start()` silently validating
+>   against a *different*, already-running SimPN service on the same port
+>   instead of its own (just-failed) subprocess — found live, while
+>   re-verifying the input/output columns.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
@@ -633,16 +635,18 @@ exactly the coupling the per-app config split exists to avoid.
   `False`/`1.0`/`0.0` respectively) — confirming the relocation changed nothing
   observable about the formula's behavior, only where its code lives.
 
-## Milestone 6 — per-run process input/output in `--csv`, and a port-race bug found verifying it
+## Milestone 6 — per-run process input/output/activity in `--csv`, and a port-race bug found verifying it
 
 ### The gap
 
 The `--csv` export (Milestone 3) wrote every `Scorecard` field — whether a run
 succeeded, its cycle time, its intervention F1 — but nothing about *what the
 run actually did*: which applicant, what credit score it computed, what it
-decided. A researcher loading the CSV into pandas couldn't connect a
-`goal_achieved=False` row back to the applicant profile that produced it
-without separately re-opening that run's trace file by hand.
+decided, and which of the process's tasks actually fired. A researcher
+loading the CSV into pandas couldn't connect a `goal_achieved=False` row back
+to the applicant profile that produced it, or see *why* it failed (e.g. the
+loan was actually granted) without separately re-opening that run's trace
+file by hand.
 
 ### Implementation
 
@@ -659,12 +663,23 @@ without separately re-opening that run's trace file by hand.
   `trace_path_for(...)` function, so `analysis.py` can locate and re-read the
   same files `run_repetition` already wrote.
 - `src/cuga_flo/scenarios/analysis.py` — `write_run_table` now takes
-  `trace_dir`, re-loads each run's `TraceRun`, and flattens
+  `trace_dir` and `app_name`, re-loads each run's `TraceRun`, and flattens
   `initial_variables()`/`final_variables()` into `input_<key>`/`output_<key>`
   columns via `csv.DictWriter` with a union-of-keys header (different
   configs/scenarios can reach different variables — e.g. identity-unverified
   vs. a fully-scored case — so the header is the union across all rows, and a
   row missing a key gets a blank cell rather than shrinking the table).
+- `src/cuga_flo/scenarios/analysis.py`'s new `_activity_columns(app_name)` —
+  loads the app's BPMN directly (`BPMNParser`/`FlowConfig`, the same way
+  `build_simpn_app.sh`'s subprocess does), filters to task elements only
+  (`task`/`serviceTask`/`userTask`/`scriptTask`/`manualTask` — not gateways,
+  events, or hooks), and maps each one to a readable `activity_<slugified
+  name>` column, disambiguated by appending the element id if two tasks
+  happen to share a sanitized name. Unlike the `input_`/`output_` columns,
+  this set is fixed per app — the BPMN model doesn't change across G0-G3 — so
+  it's read once from the BPMN file, not from any individual run's trace.
+  `write_run_table` sets each column to `element_id in run.execution_path()`
+  per row — a direct, per-task "did this fire in this run" boolean.
 
 ### A real bug found re-verifying this live
 
@@ -705,10 +720,12 @@ before ever producing that line.
   `test_run_instance_populates_case_start_and_complete_with_real_variables`
   (the real engine wiring end to end, not just a hand-written trace fixture).
 - `tests/test_scenarios.py`: `test_write_run_table_round_trips_via_csv` updated
-  for the new `trace_dir` parameter and `input_`/`output_` columns;
-  `test_write_run_table_blanks_variable_keys_other_runs_dont_have` covers the
-  union-header/blank-cell behavior across two configs with disjoint variable
-  sets. 63/63 passing across the full suite.
+  for the new `trace_dir`/`app_name` parameters and `input_`/`output_`/
+  `activity_` columns; `test_write_run_table_blanks_variable_keys_other_runs_dont_have`
+  covers the union-header/blank-cell behavior across two configs with
+  disjoint variable sets; `test_activity_columns_covers_tasks_only_not_gateways_or_events`
+  confirms the four-task universe against the real `loan_approval_simpn` BPMN
+  and that gateways/events are excluded. 64/64 passing across the full suite.
 - Live: ran `loan_approval_simpn`'s S01-nominal under G0 with `--csv`, on a
   cleanly-freed port 8082 — `input_applicant_id`, `input_credit_history`,
   `output_credit_score: 0.84` (the Milestone 4 formula's real output), and
@@ -717,3 +734,8 @@ before ever producing that line.
   unrelated debugging session on the same port), confirmed the old code
   silently validated against it, confirmed the fix now raises a clear
   `OSError`-quoting error instead.
+- Live, for the activity columns specifically: ran S02-regulatory-restriction
+  under G0 — `activity_check_credit=True`, `activity_give_loan_of_1000_usd=True`,
+  `activity_inform_account_manager=True`, `activity_send_a_rejection_letter=False`,
+  correctly showing *why* `goal_achieved=False` (the loan was actually granted
+  to the restricted applicant), not just that it was.

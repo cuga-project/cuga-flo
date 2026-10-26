@@ -383,8 +383,22 @@ not just whether the run succeeded, but which applicant and what it actually
 decided. Different configs or scenarios can reach different variables (a case
 rejected at intake never reaches the fields a scored one has); the header is
 the union across every row, and a row missing a key gets a blank cell rather
-than shrinking the whole table's columns. This is the raw material for anything
-beyond what's printed (a pandas notebook, a spreadsheet, a proper statistical
+than shrinking the whole table's columns.
+
+It also adds one `activity_<name>` boolean column per BPMN task element — e.g.
+`activity_check_credit`, `activity_give_loan_of_1000_usd`,
+`activity_send_a_rejection_letter` — recording whether that specific run's
+execution path reached it at all (`TraceRun.execution_path()` membership).
+Unlike the `input_`/`output_` columns, this set is fixed per app (the BPMN
+model doesn't change across G0-G3), read from the app's own BPMN file, not
+from any one run's trace. For `loan_approval_simpn`'s S02
+(regulatory-restriction) scenario, this is the direct way to see *why* a
+config failed: under G0, `activity_give_loan_of_1000_usd=True` and
+`activity_send_a_rejection_letter=False` shows the loan was actually granted,
+not just that `goal_achieved=False`.
+
+This is the raw material for anything beyond what's printed (a pandas
+notebook, a spreadsheet, a proper statistical
 model once you have enough repetitions to justify fitting one — see
 README-SIMPN.md's "Comparative analysis" section for exactly what's
 intentionally not built yet and why).
@@ -452,10 +466,12 @@ df.groupby("config")[["goal_achieved", "cycle_time_seconds"]].mean()
 ```
 
 Every `Scorecard` field is a column, correctly typed once pandas parses it, plus
-`input_<key>`/`output_<key>` columns for the run's actual process variables —
-`df[["config", "input_applicant_id", "output_credit_score", "output_decision"]]`
-answers "what did each config actually decide for each applicant?" directly,
-without re-opening individual trace files. This is the point to reach for a
+`input_<key>`/`output_<key>` columns for the run's actual process variables and
+one `activity_<name>` boolean column per task element —
+`df[["config", "input_applicant_id", "output_credit_score", "output_decision",
+"activity_give_loan_of_1000_usd"]]` answers "what did each config actually
+decide for each applicant, and which path did it take?" directly, without
+re-opening individual trace files. This is the point to reach for a
 confidence interval, a plot across more scenarios, or
 (once you have enough repetitions to justify it — see §6) a real statistical model.
 

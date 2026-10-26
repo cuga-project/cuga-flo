@@ -13,7 +13,7 @@ import pytest
 
 from cuga_flo.evaluation.metrics import Scorecard
 from cuga_flo.scenarios import author
-from cuga_flo.scenarios.analysis import aggregate, format_ablation, write_run_table
+from cuga_flo.scenarios.analysis import _activity_columns, aggregate, format_ablation, write_run_table
 from cuga_flo.scenarios.schema import Scenario
 
 # ── author.py ────────────────────────────────────────────────────────────────────
@@ -168,6 +168,14 @@ def test_format_ablation_reports_only_pairs_present():
     assert "G0 -> G1" not in text  # G1 wasn't run
 
 
+def test_activity_columns_covers_tasks_only_not_gateways_or_events():
+    columns = _activity_columns("loan_approval_simpn")
+    assert columns["Activity_0oydey5"] == "activity_check_credit"
+    assert "Gateway_09ad5fc" not in columns  # gateway, not a task
+    assert "StartEvent_0bpt8wp" not in columns  # event, not a task
+    assert len(columns) == 4  # the app's four task elements
+
+
 def test_write_run_table_round_trips_via_csv():
     import csv as csv_module
     import os
@@ -198,6 +206,20 @@ def test_write_run_table_round_trips_via_csv():
                     "run_id": "r",
                     "case_id": "r",
                     "source": "simpn",
+                    "event_type": "ACTIVITY_COMPLETE",
+                    "bpmn_element_id": "Activity_0oydey5",  # "check credit" — a real task in the app's BPMN
+                    "timestamp": 1.5,
+                    "payload": {},
+                }
+            )
+            + "\n"
+        )
+        fh.write(
+            json.dumps(
+                {
+                    "run_id": "r",
+                    "case_id": "r",
+                    "source": "simpn",
                     "event_type": "CASE_COMPLETE",
                     "bpmn_element_id": "End",
                     "timestamp": 2.0,
@@ -208,7 +230,7 @@ def test_write_run_table_round_trips_via_csv():
         )
 
     path = tempfile.mktemp()
-    write_run_table("S99", results, path, trace_dir)
+    write_run_table("S99", results, path, trace_dir, "loan_approval_simpn")
     with open(path, encoding="utf-8") as fh:
         rows = list(csv_module.DictReader(fh))
     assert len(rows) == 1
@@ -218,6 +240,8 @@ def test_write_run_table_round_trips_via_csv():
     assert rows[0]["input_applicant_id"] == "1234"
     assert rows[0]["input_loan_amount"] == "1000"
     assert rows[0]["output_credit_score"] == "0.84"
+    assert rows[0]["activity_check_credit"] == "True"  # reached — the ACTIVITY_COMPLETE event above
+    assert rows[0]["activity_give_loan_of_1000_usd"] == "False"  # never reached in this run
     os.remove(trace_path)
 
 
@@ -255,7 +279,7 @@ def test_write_run_table_blanks_variable_keys_other_runs_dont_have():
         "G1": [_card(goal_achieved=False)],
     }
     path = tempfile.mktemp()
-    write_run_table("S99", results, path, trace_dir)
+    write_run_table("S99", results, path, trace_dir, "loan_approval_simpn")
     with open(path, encoding="utf-8") as fh:
         rows = {r["config"]: r for r in csv_module.DictReader(fh)}
 

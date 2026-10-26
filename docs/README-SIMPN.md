@@ -332,7 +332,10 @@ utility, mean intervention F1, mean cycle time) and the G0→G1→G2→G3 ΔGAR 
 result flattened into `input_<key>`/`output_<key>` columns (read back from the
 run's own trace via `TraceRun.initial_variables`/`final_variables` — see
 `runner.py`'s `trace_path_for` for how the CSV writer locates the right file),
-ready to load into pandas/R/statsmodels.
+plus one `activity_<name>` boolean column per BPMN task element (read from the
+app's own BPMN file via `_activity_columns`, not from any one run — fixed per
+app since the model doesn't change across G0-G3) recording whether that run's
+execution path reached it at all, ready to load into pandas/R/statsmodels.
 
 What this deliberately does **not** do is fit a real mixed-effects model (§16.1-
 §16.3) or test the `AutonomyLevel × PerturbationSeverity` interaction (§16.3) — see
