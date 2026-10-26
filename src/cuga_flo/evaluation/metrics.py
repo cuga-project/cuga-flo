@@ -30,6 +30,7 @@ class Scorecard:
     process_halted: bool
     halt_reason: str | None
     cycle_time_seconds: float | None
+    simulated_cycle_time_seconds: float | None
     activity_count: int
     agent_task_invocations: int
     agent_gateway_invocations: int
@@ -77,6 +78,7 @@ def evaluate(trace_path: str, expected: ExpectedProperties | None = None, run_id
         process_halted=run.is_halted(),
         halt_reason=run.halt_reason(),
         cycle_time_seconds=run.cycle_time_seconds(),
+        simulated_cycle_time_seconds=run.simulated_cycle_time_seconds(),
         activity_count=len(run.execution_path()),
         agent_task_invocations=run.agent_task_count(),
         agent_gateway_invocations=run.agent_gateway_count(),

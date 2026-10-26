@@ -37,6 +37,13 @@
 >   one combined matrix (one service build per config, reused across every
 >   scenario found — not rebuilt per scenario) with a single combined `--csv`.
 >   The single-scenario form is unchanged and still fully supported.
+> - **Milestone 8 — a second, BPS-simulated cycle time** (see the new section
+>   at the end): `cycle_time_seconds` is real wall-clock time, near-zero for a
+>   non-agentic config since SimPN's discrete-event engine never actually
+>   sleeps out a task's duration — easy to misread as "this process takes no
+>   time." `simulated_cycle_time_seconds` (new `Scorecard` field) is the sum of
+>   each activity's own configured duration instead, the figure that actually
+>   represents the modeled process's length.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
@@ -822,3 +829,61 @@ and it meant N separate CSVs to stitch back together by hand instead of one.
   `activity_` columns for its own run — confirming the config-once/
   scenario-reused loop ordering, the per-scenario reporting, and the combined
   CSV all work as designed.
+
+## Milestone 8 — a second, BPS-simulated cycle time
+
+### The gap
+
+A user reading Milestone 7's progress output asked directly why every G0
+repetition showed `0.0s` — `cycle_time_seconds` is real wall-clock time
+(`time.time()` at each trace event, see `trace.py`), and SimPN's
+`DecProblem.step()` is a discrete-event simulator: it advances its own
+internal notion of time logically when a token becomes available after a
+`delay=duration`, it does not actually sleep out that duration. So a whole
+G0 case (no LLM calls at all) really does execute in well under a
+millisecond of real time, regardless of how long the *modeled* process is
+supposed to represent — `0.0s` was correct, not a bug, but genuinely easy to
+misread as "this process takes no time at all." The simulated duration was
+already in the trace (each `ACTIVITY_COMPLETE` event's own `duration`
+payload, in simulated seconds per `simpn_parameters.yaml`) but never
+aggregated anywhere a researcher would see it.
+
+### Implementation
+
+- `src/cuga_flo/evaluation/trace_run.py` — `TraceRun.simulated_cycle_time_seconds()`
+  sums every `ACTIVITY_COMPLETE` event's `duration` payload value. Gateways and
+  hooks are instantaneous in this model (no `duration` key at all) and the
+  execution path is always serial (no true parallel-gateway join — see
+  `engine.py`'s module docstring), so a plain sum is correct; `None` (not
+  `0.0`) when the run never completed a single activity, since those are
+  different facts. `cycle_time_seconds`'s own docstring was expanded to
+  explain the wall-clock-vs-simulated distinction explicitly, pointing at the
+  new method.
+- `src/cuga_flo/evaluation/metrics.py` — `Scorecard` gains
+  `simulated_cycle_time_seconds: float | None`, populated by `evaluate()`
+  alongside the existing `cycle_time_seconds`. Being a plain `Scorecard`
+  field, it's automatically picked up by `--csv`'s `_SCORECARD_FIELDS` (which
+  iterates `dataclasses.fields(Scorecard)` generically) with no change needed
+  in `analysis.py` — and by `cuga-flo evaluate`'s JSON output, same reason.
+  Deliberately *not* added to the printed comparison table
+  (`format_comparison`'s `cycle_s` column) or the progress-line format — this
+  was scoped as "add the field," not "change what's printed by default";
+  both remain the single, lazy source of this number everywhere else.
+
+### Verification
+
+- `tests/test_simpn_adapter.py`:
+  `test_simulated_cycle_time_sums_activity_durations_not_gateways_or_hooks`
+  (hand-written fixture, confirms gateways/hooks are excluded);
+  `test_simulated_cycle_time_is_none_without_any_completed_activity`; and an
+  assertion added to the existing `test_run_instance_populates_case_start_and_complete_with_real_variables`
+  (`== 2.0`, the real engine wiring, not just a fixture). `tests/test_scenarios.py`'s
+  `_card()` helper updated for the new required `Scorecard` field. 68/68
+  passing across the full suite.
+- Live: ran `loan_approval_simpn`'s S01-nominal under G0 with `--csv` —
+  `cycle_time_seconds` came back as `0.00028...` (sub-millisecond wall-clock,
+  as expected) while `simulated_cycle_time_seconds` came back as `4.0`
+  (check credit 2.0s + give loan 1.0s + inform account manager 1.0s, exactly
+  matching `simpn_parameters.yaml`'s configured durations for the path this
+  applicant took) — confirming the two fields measure genuinely different
+  things and both are now visible side by side in the same row.

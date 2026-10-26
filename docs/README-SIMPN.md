@@ -205,8 +205,15 @@ cuga-flo evaluate /tmp/run1.jsonl --expected applications/loan_approval_simpn/co
 ## Deterministic evaluator
 
 `cuga-flo evaluate <trace.jsonl> [--expected <properties.yaml>]` prints a JSON
-scorecard. Trace-native and policy/governance metrics (cycle time, activity/agent/
-hook counts, `policy_compliant`) are always computed; `goal_achieved`,
+scorecard. Trace-native and policy/governance metrics (activity/agent/
+hook counts, `policy_compliant`) are always computed; two distinct cycle times
+are both always computed too — `cycle_time_seconds` is real wall-clock time
+(near-zero for a non-agentic config, since SimPN's discrete-event engine
+advances its clock logically rather than sleeping out a task's configured
+duration), `simulated_cycle_time_seconds` is the BPS-simulated process
+duration instead (the sum of each activity's own `duration`, from
+`simpn_parameters.yaml` — see `TraceRun.simulated_cycle_time_seconds`'s
+docstring). `goal_achieved`,
 `decision_utility`, and `intervention_{precision,recall,f1}` need an
 `expected_properties` file (design doc §6.3 — `eventually`/`must`/`must_not`/
 `acceptable_routes`/`intervention.required_after`, predicates named either from a

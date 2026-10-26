@@ -369,6 +369,7 @@ reads one trace and prints a JSON **scorecard**:
   "run_id": "...",
   "process_completed": true,
   "cycle_time_seconds": 17.5,
+  "simulated_cycle_time_seconds": 4.0,
   "activity_count": 6,
   "agent_task_invocations": 1,
   "agent_gateway_invocations": 1,
@@ -391,6 +392,19 @@ computed from the trace alone. `goal_achieved`, `decision_utility`, and
 automatically, for `run-scenario`. `not_yet_computable` lists anything the tool
 deliberately refuses to guess at rather than silently reporting a wrong number —
 check that dict before trusting a metric's absence means "zero."
+
+**Two different cycle times, easy to confuse.** `cycle_time_seconds` is real,
+measured **wall-clock** time — how long this machine actually took to run the
+case. `simulated_cycle_time_seconds` is the **BPS-simulated** process
+duration — the sum of every activity's configured duration (from
+`simpn_parameters.yaml`), the number that actually represents how long the
+*modeled* process takes. For G0 (no agentic calls), SimPN's discrete-event
+engine advances its internal clock logically rather than sleeping out a
+task's duration, so `cycle_time_seconds` is near-zero regardless of what the
+process is meant to represent — `simulated_cycle_time_seconds` is the one to
+read for that. For G1-G3, `cycle_time_seconds` instead reflects genuine LLM
+latency, which the simulated figure deliberately doesn't capture (an LLM call
+isn't a BPS-modeled duration at all).
 
 ### Comparative analysis across the matrix
 

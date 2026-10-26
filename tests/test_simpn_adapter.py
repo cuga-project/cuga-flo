@@ -413,6 +413,35 @@ def test_final_variables_falls_back_to_case_halted_when_terminated():
     assert run.final_variables() == {"applicant_id": "9999", "flagged": True}
 
 
+def test_simulated_cycle_time_sums_activity_durations_not_gateways_or_hooks():
+    """The simulated (BPS) cycle time is the sum of ACTIVITY_COMPLETE's own
+    duration values — GATEWAY_RESOLVED/HOOK_EVALUATED carry no duration at all
+    (instantaneous in this model) and must not be counted."""
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="ACTIVITY_COMPLETE", bpmn_element_id="T1", payload={"duration": 2.0})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="HOOK_EVALUATED", bpmn_element_id="H1", payload={"action": "continue"})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="GATEWAY_RESOLVED", bpmn_element_id="G1", payload={"chosen_flow": "f1"})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="ACTIVITY_COMPLETE", bpmn_element_id="T2", payload={"duration": 1.0})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End", payload={})
+    sink.close()
+
+    run = TraceRun.load(path)
+    assert run.simulated_cycle_time_seconds() == 3.0
+
+
+def test_simulated_cycle_time_is_none_without_any_completed_activity():
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_HALTED", bpmn_element_id="T1", payload={"halt_reason": "policy halt"})
+    sink.close()
+
+    run = TraceRun.load(path)
+    assert run.simulated_cycle_time_seconds() is None
+
+
 def test_run_instance_populates_case_start_and_complete_with_real_variables(process, mcp_bridge):
     """The actual engine wiring, not just a hand-written trace fixture — proves
     make_task_behavior/make_end_behavior/run_instance all thread process_variables
@@ -428,6 +457,7 @@ def test_run_instance_populates_case_start_and_complete_with_real_variables(proc
     run = TraceRun.load(path)
     assert run.initial_variables() == {"seed_var": "abc"}
     assert run.final_variables()["credit_score"] == 0.8  # set by execute_task's canned response
+    assert run.simulated_cycle_time_seconds() == 2.0  # T1 + T2, default 1.0s duration each
 
 
 # ── Perturbations ───────────────────────────────────────────────────────────────

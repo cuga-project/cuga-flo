@@ -95,6 +95,12 @@ class TraceRun:
         return {}
 
     def cycle_time_seconds(self) -> float | None:
+        """Real, measured wall-clock time to run this case — `timestamp` is
+        `time.time()` at each event (see trace.py), not SimPN's simulated clock.
+        Near-zero for a non-agentic config like G0: SimPN's DecProblem.step()
+        advances its internal notion of time logically rather than actually
+        sleeping out a task's configured duration. See
+        simulated_cycle_time_seconds for the simulated figure instead."""
         starts = [e["timestamp"] for e in self.events if e["event_type"] == "CASE_START"]
         ends = [
             e["timestamp"] for e in self.events if e["event_type"] in ("CASE_COMPLETE", "CASE_HALTED")
@@ -102,6 +108,22 @@ class TraceRun:
         if not starts or not ends:
             return None
         return max(ends) - min(starts)
+
+    def simulated_cycle_time_seconds(self) -> float | None:
+        """The BPS-simulated process duration — the sum of every `ACTIVITY_COMPLETE`
+        event's own `duration` (engine.py's make_task_behavior, in simulated
+        seconds per simpn_parameters.yaml, not wall-clock). Gateways and hooks are
+        instantaneous in this model (no `duration` in their payload), and the
+        execution path here is always serial (no true parallel-gateway join — see
+        engine.py's module docstring), so a plain sum is correct. None, not 0.0,
+        when the run never completed a single activity — the two are different
+        facts."""
+        durations = [
+            e["payload"]["duration"]
+            for e in self.events
+            if e["event_type"] == "ACTIVITY_COMPLETE" and "duration" in e["payload"]
+        ]
+        return sum(durations) if durations else None
 
     def agent_task_count(self) -> int:
         return sum(1 for e in self.events if e["event_type"] == "AGENT_TASK_COMPLETED")
