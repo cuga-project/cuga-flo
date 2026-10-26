@@ -294,11 +294,28 @@ Builds and starts each `G<n>_config.yaml`'s service in turn (`scripts/
 build_simpn_app.sh --config ...`), one at a time on the same port, stopped before
 the next — unattended N-repetitions-x-4-configs is the point, so this does not
 follow the manual three-terminal workflow `CLAUDE.md` documents for a single
-interactive run. Prints a `goal`/`util`/`interv_f1`/`cycle_s` comparison table across
-configs. `loan_approval_simpn/scenarios/S01-nominal.yaml` and `S02-regulatory-
+interactive run. Prints a progress line per `(config, repetition)` as it runs
+(`[G1] building and starting the SimPN service...`, then
+`[3/12] S02 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)`), then a
+`goal`/`util`/`interv_f1`/`cycle_s` comparison table across configs.
+`loan_approval_simpn/scenarios/S01-nominal.yaml` and `S02-regulatory-
 restriction.yaml` are designed to actually differentiate G-levels (see each file's
 own comment for the expected story); `S03-slow-credit-check.yaml` exercises the
 perturbation mechanism itself rather than autonomy differentiation.
+
+`scenario_path` (the second positional argument above) can also be a
+directory — every `*.yaml` under it then runs as one combined matrix,
+`cuga_flo.scenarios.runner.run_matrix_many`, instead of the single-scenario
+`run_matrix`. Each config's service still comes up exactly once regardless of
+how many scenario files are found (looped config-outermost, scenario-middle,
+repetition-innermost — looping scenarios outside configs instead would
+rebuild/restart every config's service once per scenario file for no benefit);
+each scenario still gets its own printed comparison/aggregate/ablation block,
+but `--csv` combines every scenario's rows into one file, disambiguated by the
+`scenario_id` column (combining the *ablation* itself across different
+scenarios wouldn't be meaningful, so that stays per-scenario). The
+single-scenario form is unchanged and still exactly as above when you only
+want one.
 
 ### LLM-assisted scenario authoring
 
@@ -327,8 +344,8 @@ of `initial_state` rather than inventing a value) fixed it in the next run.
 `cuga_flo.scenarios.analysis` (design doc §16) adds, on top of `run-scenario`'s
 comparison table: per-config aggregates (Goal Achievement Rate, mean decision
 utility, mean intervention F1, mean cycle time) and the G0→G1→G2→G3 ΔGAR ablation
-(§16.4) — always printed. `--csv PATH` writes one row per (config, repetition),
-§16's own comparison table plus that run's actual process input and execution
+(§16.4) — always printed. `--csv PATH` writes one row per (scenario, config,
+repetition), §16's own comparison table plus that run's actual process input and execution
 result flattened into `input_<key>`/`output_<key>` columns (read back from the
 run's own trace via `TraceRun.initial_variables`/`final_variables` — see
 `runner.py`'s `trace_path_for` for how the CSV writer locates the right file),

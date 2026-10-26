@@ -30,6 +30,13 @@
 >   against a *different*, already-running SimPN service on the same port
 >   instead of its own (just-failed) subprocess — found live, while
 >   re-verifying the input/output columns.
+> - **Milestone 7 — progress output and a folder mode for `run-scenario`**
+>   (see the new section at the end): prints a line per `(config, scenario,
+>   repetition)` as it runs instead of staying silent until the final tables;
+>   `scenario_path` can now be a directory, running every `*.yaml` under it as
+>   one combined matrix (one service build per config, reused across every
+>   scenario found — not rebuilt per scenario) with a single combined `--csv`.
+>   The single-scenario form is unchanged and still fully supported.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
@@ -739,3 +746,79 @@ before ever producing that line.
   `activity_inform_account_manager=True`, `activity_send_a_rejection_letter=False`,
   correctly showing *why* `goal_achieved=False` (the loan was actually granted
   to the restricted applicant), not just that it was.
+
+## Milestone 7 — progress output and a folder mode for `run-scenario`
+
+### The gap
+
+`run-scenario` ran silently from invocation until the final comparison/
+aggregate/ablation tables printed — fine for a quick G0-only check (sub-second
+per cell), but a real G1-G3 matrix with live LLM calls can take tens of
+seconds per cell and minutes overall, with zero indication anything was
+happening in between. Separately, running every scenario in an app's
+`scenarios/` directory required an external shell `for` loop issuing one
+`run-scenario` invocation per file — functional, but it meant rebuilding and
+restarting each config's SimPN service once per scenario file, pure overhead,
+and it meant N separate CSVs to stitch back together by hand instead of one.
+
+### Implementation
+
+- `src/cuga_flo/scenarios/runner.py` — the single-scenario matrix loop was
+  generalized into `run_matrix_many(app_name, scenario_paths: list[str],
+  configs, repetitions, trace_dir) -> dict[str, dict[str, list[Scorecard]]]`
+  (keyed `scenario_id -> config -> per-repetition scorecards`), looped
+  config-outermost, scenario-middle, repetition-innermost — each config's
+  service is built and started exactly once regardless of how many scenarios
+  are given, with every scenario's repetitions run against that one instance
+  before it's torn down. Prints `[{config}] building and starting the SimPN
+  service...` before each config's service comes up, and
+  `[{step}/{total}] {scenario_id} / {config} / rep {n} of {repetitions} ...
+  done (goal=..., {cycle}s)` per repetition, flushed immediately. The original
+  `run_matrix(app_name, scenario_path, ...)` (unchanged signature and return
+  type) is now a thin wrapper: `run_matrix_many(app_name, [scenario_path],
+  ...)[scenario.scenario_id]` — one implementation behind both forms, rather
+  than two near-duplicate loops to keep in sync.
+- `src/cuga_flo/scenarios/runner.py`'s new `discover_scenarios(folder) ->
+  list[str]` — sorted `*.yaml` files directly under a directory, for
+  deterministic, repeatable ordering across runs.
+- `src/cuga_flo/scenarios/cli.py`'s `run()` — detects whether `scenario_path`
+  is a directory (`Path.is_dir()`) or a single file; either way it now calls
+  `run_matrix_many` with one or many scenario paths, then loops the *existing*
+  `format_comparison`/`aggregate`/`format_ablation` calls once per scenario
+  (unchanged output shape, just repeated) — combining the ablation itself
+  across different scenarios wouldn't be meaningful, since each one tests a
+  different condition, so that part deliberately stays per-scenario.
+- `src/cuga_flo/scenarios/analysis.py`'s `write_run_table` — generalized from
+  `(scenario_id: str, results: dict[str, list[Scorecard]])` to `(results:
+  dict[str, dict[str, list[Scorecard]]])`, keyed `scenario_id -> config ->
+  scorecards`. A single-scenario call just wraps its old `results` dict as
+  `{scenario.scenario_id: results}`; a folder-mode call passes
+  `run_matrix_many`'s return value straight through — one CSV-writing
+  implementation handles both, producing one combined file with every
+  scenario's rows when there's more than one.
+- `src/cuga_flo/cli/__init__.py` — `run-scenario`'s `scenario_path` help text
+  and command docstring updated to describe folder mode and the progress
+  output.
+
+### Verification
+
+- `tests/test_scenarios.py`: `test_discover_scenarios_finds_every_yaml_file_sorted`
+  (against the real `loan_approval_simpn/scenarios/` directory — S01/S02/S03);
+  `test_write_run_table_covers_multiple_scenarios_in_one_csv` (two scenarios'
+  rows combined into one CSV, disambiguated by `scenario_id`); the existing
+  `write_run_table` tests updated for the new nested-dict signature. 66/66
+  passing across the full suite.
+- Live: ran `loan_approval_simpn`'s single-scenario form under G0 with 2
+  repetitions — progress lines appeared correctly
+  (`[G0] building and starting the SimPN service...`, then two
+  `[n/2] S01 / G0 / rep n of 2 ... done (...)` lines), confirming the
+  single-scenario path's behavior and output are unchanged apart from the new
+  progress lines.
+- Live: ran folder mode against all three of `loan_approval_simpn/scenarios/`
+  under G0 — one `[G0] building...` line (not three), six total progress
+  lines (`[1/3]` through `[3/3]`, one per scenario), each scenario's own
+  comparison/aggregate/ablation block printed in turn, and one combined CSV
+  with three rows (`S01`/`S02`/`S03`), each with correct `input_`/`output_`/
+  `activity_` columns for its own run — confirming the config-once/
+  scenario-reused loop ordering, the per-scenario reporting, and the combined
+  CSV all work as designed.

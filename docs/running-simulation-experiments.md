@@ -312,7 +312,33 @@ per config, runs every repetition through the real `FlowAgent` (each in its own
 subprocess, so nothing leaks between repetitions — see README-SIMPN.md for why
 that isolation turned out to matter, not just be tidy), and prints results when
 done. Expect it to take a while: each config build is a fresh venv + `pip install`,
-and every G1+ repetition makes real LLM calls.
+and every G1+ repetition makes real LLM calls — so it prints a progress line as
+it goes (`[G1] building and starting the SimPN service...`, then
+`[3/12] S02 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)` per cell), rather
+than running silently until the final tables appear.
+
+### The same, for every scenario in a folder
+
+`scenario_path` can be a directory instead of one file — every `*.yaml` under
+it runs as one combined matrix:
+
+```bash
+cuga-flo run-scenario loan_approval_simpn \
+    applications/loan_approval_simpn/scenarios \
+    --configs G0,G1,G2,G3 --repetitions 1 \
+    --trace-dir traces/ --csv traces/all_runs.csv
+```
+
+Each config's service is still built and started exactly **once** regardless
+of how many scenario files are found — every scenario's repetitions run
+against that one instance before it's torn down and the next config comes up,
+not once per scenario. Each scenario still prints its own comparison/aggregate/
+ablation block in turn (combining the ablation *across* different scenarios
+wouldn't be meaningful — they test different conditions), but `--csv` writes
+one combined file covering every scenario's rows, disambiguated by its
+`scenario_id` column — what used to need an external shell `for` loop over
+individual `run-scenario` invocations is now built in. The single-scenario
+form above is unchanged and still the right tool when you only want one.
 
 ---
 
@@ -372,8 +398,9 @@ layers three more views on top automatically:
 3. The **G0→G1→G2→G3 ablation** — the change in Goal Achievement Rate at each
    step, the direct answer to "what did adding this layer of autonomy buy us?"
 
-`--csv PATH` additionally writes one row per `(config, repetition)` with every
-scorecard field, plus that run's actual process input and execution result —
+`--csv PATH` additionally writes one row per `(scenario, config, repetition)`
+with every scorecard field, plus that run's actual process input and execution
+result —
 `input_<key>`/`output_<key>` columns, one pair per process variable, read back
 from the run's own trace file (`TraceRun.initial_variables`/`final_variables`;
 see §2's `formula:` note for where these variables come from on the engine

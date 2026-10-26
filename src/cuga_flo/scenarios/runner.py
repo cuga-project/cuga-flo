@@ -50,6 +50,13 @@ def load_scenario(path: str) -> Scenario:
         return Scenario.model_validate(yaml.safe_load(fh))
 
 
+def discover_scenarios(folder: str) -> list[str]:
+    """Sorted `*.yaml` files directly under `folder` — run-scenario's folder mode
+    (run every scenario in a directory, not just one file). Sorted so output order
+    is deterministic and repeatable across runs."""
+    return sorted(str(p) for p in Path(folder).glob("*.yaml"))
+
+
 def build_run_inputs(scenario: Scenario) -> dict[str, Any]:
     """
     The `process_variables` dict passed to `FlowAgent.invoke()` — initial business
@@ -176,6 +183,67 @@ def run_repetition(config_path: str, scenario: Scenario, trace_path: str) -> Sco
     return evaluate(trace_path, expected=scenario.expected_properties)
 
 
+def run_matrix_many(
+    app_name: str,
+    scenario_paths: list[str],
+    configs: list[str],
+    repetitions: int,
+    trace_dir: str,
+) -> dict[str, dict[str, list[Scorecard]]]:
+    """Runs every scenario in `scenario_paths` across every config — the engine
+    behind both run-scenario's single-file form and its folder form (see
+    cli.run()). Looped config-outermost, scenario-middle, repetition-innermost:
+    each config's SimPN service is built and started exactly ONCE regardless of
+    how many scenarios are given, and every scenario's repetitions run against
+    that one instance before it's torn down and the next config's service comes
+    up — looping scenarios outside configs instead would rebuild/restart every
+    config's service once per scenario file, pure overhead with no benefit.
+
+    Prints one progress line per (config, scenario, repetition) as it runs —
+    this matrix can take anywhere from milliseconds (G0) to real wall-clock
+    minutes (G1-G3 with live LLM calls) per cell, so "running silently until the
+    final tables appear" was no indication at all for anything but the smallest
+    matrices.
+    """
+    app_dir = _REPO_ROOT / "applications" / app_name
+    os.makedirs(trace_dir, exist_ok=True)
+    scenarios = [load_scenario(p) for p in scenario_paths]
+
+    results: dict[str, dict[str, list[Scorecard]]] = {s.scenario_id: {} for s in scenarios}
+    total_steps = len(configs) * len(scenarios) * repetitions
+    step = 0
+    for config in configs:
+        config_path = app_dir / "config" / f"{config}_config.yaml"
+        if not config_path.exists():
+            raise FileNotFoundError(f"no {config_path} — expected one config file per G-level")
+
+        print(f"[{config}] building and starting the SimPN service...", flush=True)
+        handle = ServiceHandle(out_dir=_REPO_ROOT / "build" / "simpn" / f"{app_name}_{config}", port=_DEFAULT_PORT)
+        handle.build(app_name, config_path)
+        handle.start()
+        try:
+            for scenario in scenarios:
+                scorecards = []
+                for rep in range(repetitions):
+                    step += 1
+                    print(
+                        f"  [{step}/{total_steps}] {scenario.scenario_id} / {config} / "
+                        f"rep {rep + 1} of {repetitions} ...",
+                        end=" ",
+                        flush=True,
+                    )
+                    trace_path = trace_path_for(trace_dir, scenario.scenario_id, config, rep)
+                    card = run_repetition(str(config_path), scenario, trace_path)
+                    scorecards.append(card)
+                    cycle = f"{card.cycle_time_seconds:.1f}s" if card.cycle_time_seconds is not None else "?"
+                    print(f"done (goal={card.goal_achieved}, {cycle})", flush=True)
+                results[scenario.scenario_id][config] = scorecards
+        finally:
+            handle.stop()
+
+    return results
+
+
 def run_matrix(
     app_name: str,
     scenario_path: str,
@@ -183,29 +251,12 @@ def run_matrix(
     repetitions: int,
     trace_dir: str,
 ) -> dict[str, list[Scorecard]]:
+    """Run-scenario's single-scenario form — unchanged from before folder mode
+    existed, now a thin wrapper over run_matrix_many so both forms share one
+    implementation (and the same progress output) rather than two near-duplicate
+    loops."""
     scenario = load_scenario(scenario_path)
-    app_dir = _REPO_ROOT / "applications" / app_name
-    os.makedirs(trace_dir, exist_ok=True)
-
-    results: dict[str, list[Scorecard]] = {}
-    for config in configs:
-        config_path = app_dir / "config" / f"{config}_config.yaml"
-        if not config_path.exists():
-            raise FileNotFoundError(f"no {config_path} — expected one config file per G-level")
-
-        handle = ServiceHandle(out_dir=_REPO_ROOT / "build" / "simpn" / f"{app_name}_{config}", port=_DEFAULT_PORT)
-        handle.build(app_name, config_path)
-        handle.start()
-        try:
-            scorecards = []
-            for rep in range(repetitions):
-                trace_path = trace_path_for(trace_dir, scenario.scenario_id, config, rep)
-                scorecards.append(run_repetition(str(config_path), scenario, trace_path))
-            results[config] = scorecards
-        finally:
-            handle.stop()
-
-    return results
+    return run_matrix_many(app_name, [scenario_path], configs, repetitions, trace_dir)[scenario.scenario_id]
 
 
 def format_comparison(scenario: Scenario, results: dict[str, list[Scorecard]]) -> str:

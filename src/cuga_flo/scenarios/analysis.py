@@ -72,34 +72,40 @@ def _activity_columns(app_name: str) -> dict[str, str]:
 
 
 def write_run_table(
-    scenario_id: str, results: dict[str, list[Scorecard]], csv_path: str, trace_dir: str, app_name: str
+    results: dict[str, dict[str, list[Scorecard]]], csv_path: str, trace_dir: str, app_name: str
 ) -> None:
-    """One row per (config, repetition) — design doc §16's own comparison table,
-    plus that run's process input and execution result (TraceRun.initial_variables/
-    final_variables, re-read from the same trace file run_repetition already wrote)
-    flattened into input_<key>/output_<key> columns, plus one activity_<name>
-    boolean column per BPMN task element recording whether that specific run's
-    execution path reached it at all. Column sets can differ across rows (e.g. a
-    rejected-at-intake case never reaches the fields a scored one has); missing
-    ones are blank rather than shrinking the header to the intersection."""
+    """One row per (scenario, config, repetition) — design doc §16's own comparison
+    table, plus that run's process input and execution result (TraceRun.
+    initial_variables/final_variables, re-read from the same trace file
+    run_repetition already wrote) flattened into input_<key>/output_<key> columns,
+    plus one activity_<name> boolean column per BPMN task element recording
+    whether that specific run's execution path reached it at all. `results` is
+    keyed scenario_id -> config -> per-repetition scorecards, so a single call
+    covers one scenario (results == {scenario.scenario_id: matrix}) or every
+    scenario in a folder (run_matrix_many's return value, used as-is) — the CSV
+    schema is identical either way, disambiguated by its scenario_id column.
+    Column sets can differ across rows (e.g. a rejected-at-intake case never
+    reaches the fields a scored one has); missing ones are blank rather than
+    shrinking the header to the intersection."""
     activity_columns = _activity_columns(app_name)
     rows: list[dict[str, Any]] = []
     input_keys: set[str] = set()
     output_keys: set[str] = set()
-    for config, cards in results.items():
-        for i, card in enumerate(cards):
-            run = TraceRun.load(trace_path_for(trace_dir, scenario_id, config, i))
-            inputs = run.initial_variables()
-            outputs = run.final_variables()
-            input_keys.update(inputs)
-            output_keys.update(outputs)
-            activated = set(run.execution_path())
-            row: dict[str, Any] = {"scenario_id": scenario_id, "config": config, "repetition": i}
-            row.update({f: getattr(card, f) for f in _SCORECARD_FIELDS})
-            row.update({f"input_{k}": v for k, v in inputs.items()})
-            row.update({f"output_{k}": v for k, v in outputs.items()})
-            row.update({col: (eid in activated) for eid, col in activity_columns.items()})
-            rows.append(row)
+    for scenario_id, config_results in results.items():
+        for config, cards in config_results.items():
+            for i, card in enumerate(cards):
+                run = TraceRun.load(trace_path_for(trace_dir, scenario_id, config, i))
+                inputs = run.initial_variables()
+                outputs = run.final_variables()
+                input_keys.update(inputs)
+                output_keys.update(outputs)
+                activated = set(run.execution_path())
+                row: dict[str, Any] = {"scenario_id": scenario_id, "config": config, "repetition": i}
+                row.update({f: getattr(card, f) for f in _SCORECARD_FIELDS})
+                row.update({f"input_{k}": v for k, v in inputs.items()})
+                row.update({f"output_{k}": v for k, v in outputs.items()})
+                row.update({col: (eid in activated) for eid, col in activity_columns.items()})
+                rows.append(row)
 
     fieldnames = (
         ["scenario_id", "config", "repetition"]

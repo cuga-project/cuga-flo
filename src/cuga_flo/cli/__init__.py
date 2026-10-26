@@ -45,22 +45,26 @@ def evaluate(
 @app.command("run-scenario")
 def run_scenario(
     app_name: str = typer.Argument(..., help="Application under applications/ (e.g. loan_approval_simpn)."),
-    scenario_path: str = typer.Argument(..., help="Frozen scenario YAML, e.g. applications/<app>/scenarios/S01-nominal.yaml."),
+    scenario_path: str = typer.Argument(..., help="One frozen scenario YAML (e.g. applications/<app>/scenarios/S01-nominal.yaml), or a directory of them to run every *.yaml under it as one combined matrix."),
     configs: str = typer.Option("G0,G1,G2,G3", "--configs", help="Comma-separated G-levels to run, each needing applications/<app>/config/<level>_config.yaml."),
     repetitions: int = typer.Option(1, "--repetitions", help="Repetitions per config."),
     trace_dir: str = typer.Option("traces", "--trace-dir", help="Directory for per-repetition unified-trace files."),
-    csv: Optional[str] = typer.Option(None, "--csv", help="Write one row per (config, repetition) here — design doc §16's own comparison table."),
+    csv: Optional[str] = typer.Option(None, "--csv", help="Write one row per (scenario, config, repetition) here — design doc §16's own comparison table."),
 ) -> None:
     """
-    Run a frozen scenario across one or more autonomy configurations (design doc §8).
+    Run one frozen scenario, or every scenario in a directory, across one or more
+    autonomy configurations (design doc §8).
 
-    Builds and starts each config's SimPN Simulation Runtime Service in turn (one at
-    a time, stopped before the next), runs the requested repetitions through the
-    real FlowAgent, and prints a goal/decision-utility/intervention-F1/cycle-time
-    comparison table, per-config aggregates, and the G0->G1->G2->G3 goal-achievement
-    ablation (design doc §16.4 — descriptive, not a fitted mixed-effects model; see
+    Builds and starts each config's SimPN Simulation Runtime Service once (one
+    config at a time, stopped before the next), runs every scenario's requested
+    repetitions against it through the real FlowAgent — printing a progress line
+    per (config, scenario, repetition) as it goes — then prints, per scenario, a
+    goal/decision-utility/intervention-F1/cycle-time comparison table, per-config
+    aggregates, and the G0->G1->G2->G3 goal-achievement ablation (design doc
+    §16.4 — descriptive, not a fitted mixed-effects model; see
     cuga_flo.scenarios.analysis's module docstring for why, and --csv for the raw
-    per-run table a real model would be fit over externally).
+    per-run table, combined across every scenario run, a real model would be fit
+    over externally).
     """
     from cuga_flo.scenarios.cli import run as run_scenario_matrix
 

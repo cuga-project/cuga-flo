@@ -10,7 +10,7 @@ import yaml
 
 from cuga_flo.scenarios.analysis import aggregate, format_ablation, format_aggregates, write_run_table
 from cuga_flo.scenarios.author import author_scenario
-from cuga_flo.scenarios.runner import format_comparison, load_scenario, run_matrix
+from cuga_flo.scenarios.runner import discover_scenarios, format_comparison, load_scenario, run_matrix_many
 
 
 def run(
@@ -21,15 +21,35 @@ def run(
     trace_dir: str,
     csv_path: Optional[str] = None,
 ) -> int:
-    results = run_matrix(app_name, scenario_path, configs, repetitions, trace_dir)
-    scenario = load_scenario(scenario_path)
-    print(format_comparison(scenario, results))
-    print()
-    print(format_aggregates(aggregate(results)))
-    print()
-    print(format_ablation(aggregate(results)))
+    """`scenario_path` is either one scenario YAML (the original, still-supported
+    form) or a directory of them — run-scenario's folder mode, every `*.yaml`
+    under it run as one combined matrix (each config's SimPN service built and
+    started once, reused across every scenario — see run_matrix_many). Either
+    way the per-scenario comparison/aggregate/ablation tables print once per
+    scenario, unchanged; folder mode's only difference is running more than one
+    and writing them to a single combined --csv (the scenario_id column already
+    disambiguates rows — combining the *ablation* across different scenarios
+    wouldn't be meaningful, so that part deliberately stays per-scenario)."""
+    if Path(scenario_path).is_dir():
+        scenario_paths = discover_scenarios(scenario_path)
+        if not scenario_paths:
+            print(f"no *.yaml scenario files found under {scenario_path}", file=sys.stderr)
+            return 1
+    else:
+        scenario_paths = [scenario_path]
+
+    multi_results = run_matrix_many(app_name, scenario_paths, configs, repetitions, trace_dir)
+    for path in scenario_paths:
+        scenario = load_scenario(path)
+        results = multi_results[scenario.scenario_id]
+        print()
+        print(format_comparison(scenario, results))
+        print()
+        print(format_aggregates(aggregate(results)))
+        print()
+        print(format_ablation(aggregate(results)))
     if csv_path:
-        write_run_table(scenario.scenario_id, results, csv_path, trace_dir, app_name)
+        write_run_table(multi_results, csv_path, trace_dir, app_name)
         print(f"\nPer-run table written to {csv_path}")
     return 0
 

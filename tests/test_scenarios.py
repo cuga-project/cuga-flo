@@ -230,7 +230,7 @@ def test_write_run_table_round_trips_via_csv():
         )
 
     path = tempfile.mktemp()
-    write_run_table("S99", results, path, trace_dir, "loan_approval_simpn")
+    write_run_table({"S99": results}, path, trace_dir, "loan_approval_simpn")
     with open(path, encoding="utf-8") as fh:
         rows = list(csv_module.DictReader(fh))
     assert len(rows) == 1
@@ -279,7 +279,7 @@ def test_write_run_table_blanks_variable_keys_other_runs_dont_have():
         "G1": [_card(goal_achieved=False)],
     }
     path = tempfile.mktemp()
-    write_run_table("S99", results, path, trace_dir, "loan_approval_simpn")
+    write_run_table({"S99": results}, path, trace_dir, "loan_approval_simpn")
     with open(path, encoding="utf-8") as fh:
         rows = {r["config"]: r for r in csv_module.DictReader(fh)}
 
@@ -287,6 +287,61 @@ def test_write_run_table_blanks_variable_keys_other_runs_dont_have():
     assert rows["G0"]["output_decision"] == ""
     assert rows["G1"]["input_only_in_g1"] == "x"
     assert rows["G1"]["output_credit_score"] == ""
+
+
+def test_discover_scenarios_finds_every_yaml_file_sorted():
+    from cuga_flo.scenarios.runner import discover_scenarios
+
+    paths = discover_scenarios("applications/loan_approval_simpn/scenarios")
+    names = [p.split("/")[-1] for p in paths]
+    assert names == sorted(names)
+    assert "S01-nominal.yaml" in names
+    assert "S02-regulatory-restriction.yaml" in names
+    assert "S03-slow-credit-check.yaml" in names
+
+
+def test_write_run_table_covers_multiple_scenarios_in_one_csv():
+    """run-scenario's folder mode combines every scenario's rows into one CSV —
+    the scenario_id column is what disambiguates them."""
+    import csv as csv_module
+
+    from cuga_flo.scenarios.runner import trace_path_for
+
+    def _write_trace(trace_dir, scenario_id, config):
+        path = trace_path_for(trace_dir, scenario_id, config, 0)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(
+                json.dumps(
+                    {"run_id": "r", "case_id": "r", "source": "simpn", "event_type": "CASE_START",
+                     "bpmn_element_id": "Start", "timestamp": 1.0,
+                     "payload": {"process_variables": {"applicant_id": scenario_id}}}
+                ) + "\n"
+            )
+            fh.write(
+                json.dumps(
+                    {"run_id": "r", "case_id": "r", "source": "simpn", "event_type": "CASE_COMPLETE",
+                     "bpmn_element_id": "End", "timestamp": 2.0, "payload": {"process_variables": {}}}
+                ) + "\n"
+            )
+
+    trace_dir = tempfile.mkdtemp()
+    _write_trace(trace_dir, "S01", "G0")
+    _write_trace(trace_dir, "S02", "G0")
+
+    multi_results = {
+        "S01": {"G0": [_card(goal_achieved=True)]},
+        "S02": {"G0": [_card(goal_achieved=False)]},
+    }
+    path = tempfile.mktemp()
+    write_run_table(multi_results, path, trace_dir, "loan_approval_simpn")
+    with open(path, encoding="utf-8") as fh:
+        rows = {r["scenario_id"]: r for r in csv_module.DictReader(fh)}
+
+    assert set(rows) == {"S01", "S02"}
+    assert rows["S01"]["input_applicant_id"] == "S01"
+    assert rows["S02"]["input_applicant_id"] == "S02"
+    assert rows["S01"]["goal_achieved"] == "True"
+    assert rows["S02"]["goal_achieved"] == "False"
 
 
 if __name__ == "__main__":
