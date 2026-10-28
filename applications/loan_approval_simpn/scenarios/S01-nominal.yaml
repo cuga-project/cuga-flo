@@ -6,9 +6,9 @@
 # here, not the "always rejects" result this scenario's header used to (wrongly)
 # describe. This is the sanity check "does the simplest case still work
 # everywhere?", not a G0-vs-G1+ probe — see S02 (oversight autonomy via the
-# approval-intercept hook) and S04 (identity verification via the
-# screen-before-credit-check hook) for scenarios that actually exercise a
-# config-level gap.
+# approval-intercept hook), S04 (identity verification via the
+# screen-before-credit-check hook), and S05 (decision autonomy, no hook
+# involved at all) for scenarios that actually exercise a config-level gap.
 scenario_id: S01
 description: >
   Nominal case: a well-qualified applicant with clean credit history and a

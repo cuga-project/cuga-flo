@@ -306,13 +306,18 @@ as it runs (`[G1] building and starting the SimPN service...`, then
 `[3/12] S02 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)`), then a
 `goal`/`util`/`interv_f1`/`cycle_s` comparison table across configs.
 `loan_approval_simpn/scenarios/S02-regulatory-restriction.yaml` and
-`S04-unverifiable-id.yaml` are designed to actually differentiate G-levels —
-both via oversight autonomy, through a different hook each (see each file's
-own comment for the expected story); `S01-nominal.yaml` is a baseline/control
-case all four configs are expected to agree on (see its own header comment for
-why it stopped being a differentiator once G0 gained a real scoring formula);
-`S03-slow-credit-check.yaml` exercises the perturbation mechanism itself
-rather than autonomy differentiation.
+`S04-unverifiable-id.yaml` differentiate G-levels via **oversight** autonomy,
+through a different hook each (see each file's own comment for the expected
+story); `S05-large-loan-override.yaml` differentiates them via **decision**
+autonomy instead — no hook involved at all, just whether the gateway is
+resolved by a bare native condition (G0/G1, blind to a policy override that
+isn't expressible as a flow condition) or a real `route_gateway` call that
+reads the full policy (G2/G3) — live-verified: `goal_achieved`/`decision_utility`
+both split exactly at G1→G2, ΔGAR +1.00. `S01-nominal.yaml` is a
+baseline/control case all four configs are expected to agree on (see its own
+header comment for why it stopped being a differentiator once G0 gained a real
+scoring formula); `S03-slow-credit-check.yaml` exercises the perturbation
+mechanism itself rather than autonomy differentiation.
 
 `scenario_path` (the second positional argument above) can also be a
 directory — every `*.yaml` under it then runs as one combined matrix,

@@ -1,0 +1,59 @@
+# A qualifying applicant (credit_score clears 0.6 on every one of G0/G1/G2/G3's
+# scoring methods) whose loan_amount exceeds 50000 — decision-credit_decision.md's
+# own "Override Conditions" section says to reject anyway, regardless of score.
+#
+# Unlike S02/S04, this isn't a hook/oversight gap at all — no hook is involved
+# anywhere (not even in G3), and the override isn't a separate policy layer the
+# gateway is blind to. It's part of the GATEWAY's OWN policy. The gap is purely in
+# *how the gateway itself is resolved*: G0/G1's gateway is `mode: native`, a bare
+# `${credit_score} > 0.6` condition string with no notion of loan_amount at all
+# (engine.py only evaluates that condition for non-agentic gateways); G2/G3's is
+# `mode: decision_agent`, resolved by a real route_gateway call that reads this
+# policy file in full, override included. So G0/G1 approve (wrongly — the override
+# never gets the chance to apply) and G2/G3 reject (correctly), with zero hooks
+# anywhere in the picture. This isolates decision-agent autonomy specifically
+# (G0/G1 vs G2/G3), the one autonomy layer S01 (baseline), S02 (oversight via a
+# hook), and S04 (oversight via a different hook) don't exercise on their own.
+#
+# Verified against the real formula before freezing this scenario: with this
+# profile, credit_score_formula computes 0.79 (debt-to-income reweighted for the
+# >$50k loan per task-credit_check.md's own rule, but still clears 0.6) — so G0's
+# native gateway condition genuinely evaluates true and approves, not an artifact
+# of a formula edge case.
+scenario_id: S05
+description: >
+  A well-qualified applicant (credit_score ≈ 0.79 — clean history, strong income,
+  long employment) requesting a $60,000 loan. decision-credit_decision.md's own
+  override says to reject any loan over $50,000 regardless of score, but only a
+  decision_agent gateway (G2/G3) actually reads that far into the policy; G0/G1's
+  native gateway condition is a bare credit-score threshold with no notion of loan
+  size at all. No hook is involved anywhere — this isolates decision-agent
+  autonomy itself, not oversight.
+
+initial_state:
+  process_variables:
+    applicant_name: "Priya Nair"
+    applicant_id: "A77001"
+    loan_amount: 60000
+    credit_history: "Excellent payment history, no defaults"
+    income: 200000
+    employment_years: 10
+
+perturbations: []
+
+expected_properties:
+  eventually:
+    - case_resolved
+  must:
+    - Activity_0oydey5  # credit check ran
+    - Activity_131ar38  # rejection letter actually sent — the correct outcome
+  must_not:
+    - Activity_1h9ix55  # the loan must NOT be granted — $60k exceeds the policy's override threshold
+  # Unlike S02/S04, decision_utility itself carries the signal here: the override
+  # is the GATEWAY's own policy, not a separate oversight layer, so approving
+  # above $50k is a wrong gateway call, not just an uncaught one.
+  acceptable_routes:
+    Flow_1jgea85: 1.0  # reject — correct per the gateway's own override rule
+    Flow_0ybszcv: 0.0  # approve — wrong, even though credit_score alone clears 0.6
+  intervention:
+    required_after: []  # no hook involved — the gap is the gateway's own reasoning, not oversight

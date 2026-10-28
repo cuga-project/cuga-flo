@@ -44,6 +44,18 @@
 >   time." `simulated_cycle_time_seconds` (new `Scorecard` field) is the sum of
 >   each activity's own configured duration instead, the figure that actually
 >   represents the modeled process's length.
+> - **Milestone 9 — S05, a decision-autonomy differentiator with no hook at
+>   all** (see the new section at the end): S02/S04 both isolate *oversight*
+>   autonomy (G3's hooks); nothing isolated *decision* autonomy (G2+) on its
+>   own. Found a real, already-existing gap:
+>   `decision-credit_decision.md`'s own "reject any loan over $50,000
+>   regardless of score" override is only readable by a `decision_agent`
+>   gateway (G2/G3) — G0/G1's native gateway is a bare
+>   `${credit_score} > 0.6` condition string with no notion of loan size.
+>   Live-verified across all four configs with real LLM calls:
+>   `goal_achieved`/`decision_utility` split exactly at G1→G2 (`False`/`0.0`
+>   for both G0 and G1, `True`/`1.0` for both G2 and G3), ΔGAR +1.00, with
+>   `intervention_f1` staying `None` everywhere since no hook ever fires.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
@@ -887,3 +899,64 @@ aggregated anywhere a researcher would see it.
   matching `simpn_parameters.yaml`'s configured durations for the path this
   applicant took) — confirming the two fields measure genuinely different
   things and both are now visible side by side in the same row.
+
+## Milestone 9 — S05, a decision-autonomy differentiator with no hook at all
+
+### The gap
+
+S02 (regulatory restriction) and S04 (unverifiable identity) both isolate
+*oversight* autonomy specifically — G0/G1/G2 all fail identically (no hook),
+only G3 (which adds the hooks) catches it. Nothing in the scenario suite
+isolated *decision* autonomy (G2+'s `decision_agent` gateway) on its own,
+separate from oversight — a user asked directly whether such a scenario
+existed, and it didn't.
+
+### The mechanism
+
+`applications/loan_approval_simpn/policies/decision-credit_decision.md`
+already has an "Override Conditions" rule that was never exercised by any
+scenario: *"If the applicant's `loan_amount` exceeds 50000, reject the loan
+request anyway"* — a hard override independent of credit score. G0/G1's
+gateway (`Gateway_09ad5fc`) runs with `mode: native`, resolved by a bare
+condition string, `${credit_score} > 0.6` — `engine.py` only evaluates that
+string for non-agentic gateways (the `else` branch after the
+`decision_gateway_ids` check), with zero notion of `loan_amount`. G2/G3's
+gateway runs with `mode: decision_agent`: resolved by a real `route_gateway`
+MCP call that hands the full policy text — override included — to an LLM.
+So an applicant who clears the 0.6 threshold on credit score alone, but whose
+`loan_amount` exceeds 50000, gets wrongly approved by G0/G1 (the override
+never gets the chance to apply) and correctly rejected by G2/G3 — with no
+hook involved anywhere in either outcome.
+
+### Implementation
+
+- `applications/loan_approval_simpn/scenarios/S05-large-loan-override.yaml`
+  (new) — `applicant_id: "A77001"`, `loan_amount: 60000`, `income: 200000`,
+  `employment_years: 10`, excellent `credit_history`. Verified against the
+  real formula *before* freezing the scenario (not just reasoned about on
+  paper): `credit_score_formula` computes `0.79` for this exact profile
+  (debt-to-income reweighted for the >$50k loan per
+  `task-credit_check.md`'s own rule, but still clears 0.6) — so G0's approval
+  is a genuine consequence of the native condition evaluating true, not an
+  artifact of some formula edge case. `expected_properties.acceptable_routes`
+  sets `Flow_1jgea85` (reject) to `1.0` and `Flow_0ybszcv` (approve) to `0.0`
+  — unlike S02/S04, `decision_utility` itself carries the signal here, since
+  the override is the *gateway's own* policy, not a separate oversight layer
+  a hook would have to catch. `intervention.required_after` is empty — no
+  hook is involved in either the correct or incorrect outcome.
+- `applications/loan_approval_simpn/scenarios/S01-nominal.yaml` and
+  `docs/README-SIMPN.md`'s scenario-listing sentence both updated to mention
+  S05 alongside S02/S04 as a scenario that actually exercises a config-level
+  gap — this time decision autonomy, not oversight.
+
+### Verification
+
+- Schema validation: `Scenario.model_validate` accepts the new file cleanly.
+- Live, all four configs, real LLM calls for G1-G3: `G0 goal=False util=0.0`,
+  `G1 goal=False util=0.0`, `G2 goal=True util=1.0`, `G3 goal=True util=1.0`
+  — the printed ablation shows `G1 -> G2: +1.00` and nothing else computable
+  (G0→G1 and G2→G3 both flat, exactly as designed), with `intervention_f1`
+  staying `None` across every config since no hook ever fires for this
+  scenario. G3 behaving identically to G2 (not just "also passing") confirms
+  the approval-path hook genuinely never gets reached, since the case takes
+  the rejection route under both.
