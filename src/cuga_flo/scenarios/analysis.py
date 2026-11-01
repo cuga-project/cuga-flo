@@ -339,11 +339,6 @@ def write_report(
         "",
         "## Scores Matrix — Goal Achievement Rate by Scenario × Configuration",
         "",
-        "Same shape as the executive deck's \"Scenario Type\" scorecard "
-        "(`CUGA_FLO_Prosimos_Executive_Integration_extended.pptx`, slide 23) — "
-        "real scenario ids and real measured results here, not an illustrative "
-        "hypothetical.",
-        "",
         "| Scenario | " + " | ".join(configs) + " |",
         "|---|" + "---|" * len(configs),
     ]
