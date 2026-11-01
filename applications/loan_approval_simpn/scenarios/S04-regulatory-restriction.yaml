@@ -15,7 +15,7 @@
 # credit_score sat at its 0.0 default and it rejected everyone regardless,
 # "succeeding" on this one scenario by accident — see the plan doc's Milestone 3
 # note for that earlier, messier result).
-scenario_id: S02
+scenario_id: S04
 description: >
   Same qualifying profile as S01, but applicant_id "4321" triggers a regulatory
   override that must redirect the case to rejection regardless of credit score.

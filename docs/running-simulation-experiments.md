@@ -152,7 +152,7 @@ A scenario is a frozen YAML file under `applications/<app>/scenarios/`. It has
 three parts (`cuga_flo.scenarios.schema.Scenario`):
 
 ```yaml
-scenario_id: S02
+scenario_id: S04
 description: >
   One paragraph explaining what this scenario tests and why.
 
@@ -220,11 +220,11 @@ Either write the YAML directly (as above), or describe the idea in plain English
 and let an LLM draft it:
 
 ```bash
-cuga-flo author-scenario loan_approval_simpn S04 \
+cuga-flo author-scenario loan_approval_simpn S06 \
     --idea "The applicant's credit check takes much longer than usual because the \
 verification service is backed up, but they're otherwise a strong candidate who \
 should still get approved once it completes." \
-    --out applications/loan_approval_simpn/scenarios/S04-draft.yaml
+    --out applications/loan_approval_simpn/scenarios/S06-draft.yaml
 ```
 
 This is grounded in the app's *real* element/flow/hook ids and variable names (so
@@ -307,9 +307,9 @@ service's build/start/stop itself, one config at a time, on one reused port:
 ```bash
 source .venv/bin/activate
 cuga-flo run-scenario loan_approval_simpn \
-    applications/loan_approval_simpn/scenarios/S02-regulatory-restriction.yaml \
+    applications/loan_approval_simpn/scenarios/S04-regulatory-restriction.yaml \
     --configs G0,G1,G2,G3 --repetitions 3 \
-    --trace-dir traces/ --csv traces/S02_runs.csv
+    --trace-dir traces/ --csv traces/S04_runs.csv
 ```
 
 This is genuinely unattended — it builds and tears down an isolated service venv
@@ -319,7 +319,7 @@ that isolation turned out to matter, not just be tidy), and prints results when
 done. Expect it to take a while: each config build is a fresh venv + `pip install`,
 and every G1+ repetition makes real LLM calls — so it prints a progress line as
 it goes (`[G1] building and starting the SimPN service...`, then
-`[3/12] S02 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)` per cell), rather
+`[3/12] S04 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)` per cell), rather
 than running silently until the final tables appear.
 
 ### The same, for every scenario in a folder
@@ -437,7 +437,7 @@ It also adds one `activity_<name>` boolean column per BPMN task element — e.g.
 execution path reached it at all (`TraceRun.execution_path()` membership).
 Unlike the `input_`/`output_` columns, this set is fixed per app (the BPMN
 model doesn't change across G0-G3), read from the app's own BPMN file, not
-from any one run's trace. For `loan_approval_simpn`'s S02
+from any one run's trace. For `loan_approval_simpn`'s S04
 (regulatory-restriction) scenario, this is the direct way to see *why* a
 config failed: under G0, `activity_give_loan_of_1000_usd=True` and
 `activity_send_a_rejection_letter=False` shows the loan was actually granted,
@@ -455,7 +455,7 @@ intentionally not built yet and why).
 
 ### Reading the terminal output
 
-A real run of S02 (`applicant_id: "4321"`, a regulatory restriction only a hook can
+A real run of S04 (`applicant_id: "4321"`, a regulatory restriction only a hook can
 catch) across all four configs produced the comparison table below; the aggregate
 and ablation views are computed from that same real data (shown together here, as
 `run-scenario` now prints all three in one pass):
@@ -507,7 +507,7 @@ not as a side effect of not being able to do arithmetic at all.
 
 ```python
 import pandas as pd
-df = pd.read_csv("traces/S02_runs.csv")
+df = pd.read_csv("traces/S04_runs.csv")
 df.groupby("config")[["goal_achieved", "cycle_time_seconds"]].mean()
 ```
 

@@ -44,7 +44,7 @@
 >   time." `simulated_cycle_time_seconds` (new `Scorecard` field) is the sum of
 >   each activity's own configured duration instead, the figure that actually
 >   represents the modeled process's length.
-> - **Milestone 9 — S05, a decision-autonomy differentiator with no hook at
+> - **Milestone 9 — S03, a decision-autonomy differentiator with no hook at
 >   all** (see the new section at the end): S02/S04 both isolate *oversight*
 >   autonomy (G3's hooks); nothing isolated *decision* autonomy (G2+) on its
 >   own. Found a real, already-existing gap:
@@ -56,15 +56,15 @@
 >   `goal_achieved`/`decision_utility` split exactly at G1→G2 (`False`/`0.0`
 >   for both G0 and G1, `True`/`1.0` for both G2 and G3), ΔGAR +1.00, with
 >   `intervention_f1` staying `None` everywhere since no hook ever fires.
-> - **Milestone 10 — S03's semantic fact gets a real policy to answer to**
->   (see the new section at the end): S03's `semantic.evidence.
+> - **Milestone 10 — S05's semantic fact gets a real policy to answer to**
+>   (see the new section at the end): S05's `semantic.evidence.
 >   contradictory_information` fact used to be deliberately inert — nothing
 >   read it. Added a second rule to `hook-approval_intercept.md` ("if
 >   contradictory evidence is discovered, `terminate` regardless of credit
 >   score or applicant ID") alongside the existing applicant-4321 rule, making
->   S03 ALSO an oversight-autonomy differentiator (G0-G2 wrongly grant the
+>   S05 ALSO an oversight-autonomy differentiator (G0-G2 wrongly grant the
 >   loan, G3's hook halts it) — the same shape as S02/S04, on top of the BPS
->   duration-perturbation demo S03 already did. Live-verified both halves
+>   duration-perturbation demo S05 already did. Live-verified both halves
 >   with real LLM calls, including catching and correctly diagnosing an LLM
 >   timeout (not a policy bug) on the first G3 attempt.
 >
@@ -386,7 +386,7 @@ presence.
 ### Verification result — the full G0–G3 differentiation story, confirmed live
 
 `cuga-flo run-scenario loan_approval_simpn
-applications/loan_approval_simpn/scenarios/S02-regulatory-restriction.yaml
+applications/loan_approval_simpn/scenarios/S04-regulatory-restriction.yaml
 --configs G0,G1,G2,G3 --repetitions 1`, real LLM calls throughout:
 
 | Config | goal_achieved | decision_utility | intervention_f1 | cycle_s |
@@ -498,7 +498,7 @@ G0 ("conventional BPMN/BPS, no agentic control") ran every task — including
 sampling only, no scoring logic at all. `credit_score` simply stayed at its
 Pydantic default (`0.0`) for the rest of the case. This happened to make every
 G0 run reject every applicant, which accidentally "passed" some scenarios
-(e.g. the original S02 regulatory-restriction scenario, where G0 rejected
+(e.g. the original S04 regulatory-restriction scenario, where G0 rejected
 "4321" — not because it caught the regulatory issue, but because it rejects
 everyone). That's a false success: it collapses `goal_achieved` and
 `intervention_f1` into agreeing for the wrong reason, and it understates what
@@ -589,14 +589,14 @@ positive phrase matches. Regression test:
   policy's stated defaults (`0.0`+`rejection_reason`, `0.3`+`no_history`).
 - A >$50k loan: measurably stricter (debt-to-income weighted higher), as the
   policy specifies.
-- **This changes S02's story**, and the live run confirmed it isn't cosmetic:
+- **This changes S04's story**, and the live run confirmed it isn't cosmetic:
   under G0, applicant "4321" now also scores well on the formula (same
   ~0.8-range result the regulatory restriction has no notion of) and gets
   wrongly approved — joining G1/G2 instead of "succeeding by accident." G0,
-  G1, and G2 now fail S02 identically (no oversight hook in any of them);
+  G1, and G2 now fail S04 identically (no oversight hook in any of them);
   only G3 catches it. This is a cleaner, more honest 3-vs-1 differentiation
   than before, and the four places that described the old behavior were
-  updated to match: `S02-regulatory-restriction.yaml`'s header/description,
+  updated to match: `S04-regulatory-restriction.yaml`'s header/description,
   `docs/running-simulation-experiments.md` §7's worked table/aggregates/
   ablation/interpretation, `docs/README-SIMPN.md`'s G0-G3 mechanism section,
   and the as-built note added inline in this plan's Milestone 2 section
@@ -666,7 +666,7 @@ exactly the coupling the per-app config split exists to avoid.
 - Live: rebuilt `build/simpn/loan_approval_simpn/` from scratch and confirmed
   `formulas.py` was staged into the build output; started the service and
   confirmed it came up healthy (it would have crashed at `load_registry` if
-  the staged file were broken); ran S01-nominal and S02-regulatory-restriction
+  the staged file were broken); ran S01-nominal and S04-regulatory-restriction
   under G0 via `cuga-flo run-scenario` and got the identical `goal`/`util`/
   `intervention_f1` results as before this refactor (`True`/`1.0`/`None` and
   `False`/`1.0`/`0.0` respectively) — confirming the relocation changed nothing
@@ -771,7 +771,7 @@ before ever producing that line.
   unrelated debugging session on the same port), confirmed the old code
   silently validated against it, confirmed the fix now raises a clear
   `OSError`-quoting error instead.
-- Live, for the activity columns specifically: ran S02-regulatory-restriction
+- Live, for the activity columns specifically: ran S04-regulatory-restriction
   under G0 — `activity_check_credit=True`, `activity_give_loan_of_1000_usd=True`,
   `activity_inform_account_manager=True`, `activity_send_a_rejection_letter=False`,
   correctly showing *why* `goal_achieved=False` (the loan was actually granted
@@ -911,11 +911,11 @@ aggregated anywhere a researcher would see it.
   applicant took) — confirming the two fields measure genuinely different
   things and both are now visible side by side in the same row.
 
-## Milestone 9 — S05, a decision-autonomy differentiator with no hook at all
+## Milestone 9 — S03, a decision-autonomy differentiator with no hook at all
 
 ### The gap
 
-S02 (regulatory restriction) and S04 (unverifiable identity) both isolate
+S04 (regulatory restriction) and S02 (unverifiable identity) both isolate
 *oversight* autonomy specifically — G0/G1/G2 all fail identically (no hook),
 only G3 (which adds the hooks) catches it. Nothing in the scenario suite
 isolated *decision* autonomy (G2+'s `decision_agent` gateway) on its own,
@@ -941,7 +941,7 @@ hook involved anywhere in either outcome.
 
 ### Implementation
 
-- `applications/loan_approval_simpn/scenarios/S05-large-loan-override.yaml`
+- `applications/loan_approval_simpn/scenarios/S03-large-loan-override.yaml`
   (new) — `applicant_id: "A77001"`, `loan_amount: 60000`, `income: 200000`,
   `employment_years: 10`, excellent `credit_history`. Verified against the
   real formula *before* freezing the scenario (not just reasoned about on
@@ -957,7 +957,7 @@ hook involved anywhere in either outcome.
   hook is involved in either the correct or incorrect outcome.
 - `applications/loan_approval_simpn/scenarios/S01-nominal.yaml` and
   `docs/README-SIMPN.md`'s scenario-listing sentence both updated to mention
-  S05 alongside S02/S04 as a scenario that actually exercises a config-level
+  S03 alongside S02/S04 as a scenario that actually exercises a config-level
   gap — this time decision autonomy, not oversight.
 
 ### Verification
@@ -972,15 +972,15 @@ hook involved anywhere in either outcome.
   the approval-path hook genuinely never gets reached, since the case takes
   the rejection route under both.
 
-## Milestone 10 — S03's semantic fact gets a real policy to answer to
+## Milestone 10 — S05's semantic fact gets a real policy to answer to
 
 ### The gap
 
-A user asked which regulatory policy would be affected by S03's semantic
+A user asked which regulatory policy would be affected by S05's semantic
 perturbation (`semantic.evidence.contradictory_information: true`, injected
 right after the gateway resolves). Grepped every policy file in the app,
 including synonyms ("conflict," "inconsistent," "discrepan-") — zero matches
-anywhere. S03's own header comment already said as much: the fact lands in
+anywhere. S05's own header comment already said as much: the fact lands in
 `process_variables`, proving the perturbation mechanism works, but nothing
 in the app ever reads it. Asked directly to fix that by adding a rule to the
 approval-intercept hook.
@@ -1000,7 +1000,7 @@ approval-intercept hook.
   needed — `terminate` was already a fully-implemented, unit-tested
   `HookAction` (`test_hook_terminate_halts_before_the_gateway`) and already
   a permitted action in every G-level's `action_permissions`.
-- `applications/loan_approval_simpn/scenarios/S03-slow-credit-check.yaml` —
+- `applications/loan_approval_simpn/scenarios/S05-slow-credit-check.yaml` —
   header comment, description, and `expected_properties` all updated: this
   scenario is now ALSO an oversight-autonomy differentiator (the same shape
   as S02/S04), on top of the BPS duration-perturbation demo it already did.
@@ -1008,7 +1008,7 @@ approval-intercept hook.
   `intervention.required_after: [Flow_0ybszcv]` (the hook must halt the
   case) added; `acceptable_routes: {Flow_0ybszcv: 1.0}` kept as-is — the
   gateway's own narrow credit-score reasoning is still correct on its own
-  terms, same logic as S02's identical comment, since the hook is a
+  terms, same logic as S04's identical comment, since the hook is a
   *separate* oversight layer from the gateway's own decision quality.
 
 ### A real failure caught and correctly diagnosed, not worked around
@@ -1026,7 +1026,7 @@ fails, read the trace before concluding the new code is wrong.
 
 ### Verification
 
-- Schema validation: `Scenario.model_validate` accepts the updated S03
+- Schema validation: `Scenario.model_validate` accepts the updated S05
   cleanly. Full test suite unaffected (no engine code touched) — 68/68.
 - Live, G0 (free): `goal=False`, `decision_utility=1.0`,
   `intervention_f1=0.0` — the fact lands, nothing reads it (no hook), the

@@ -20,7 +20,7 @@
 # >$50k loan per task-credit_check.md's own rule, but still clears 0.6) — so G0's
 # native gateway condition genuinely evaluates true and approves, not an artifact
 # of a formula edge case.
-scenario_id: S05
+scenario_id: S03
 description: >
   A well-qualified applicant (credit_score ≈ 0.79 — clean history, strong income,
   long employment) requesting a $60,000 loan. decision-credit_decision.md's own

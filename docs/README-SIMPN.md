@@ -237,7 +237,7 @@ statistical-analysis layers (still deferred).
 ### Scenario format — `cuga_flo.scenarios.schema.Scenario`
 
 ```yaml
-scenario_id: S02
+scenario_id: S04
 initial_state:
   process_variables: {applicant_id: "4321", loan_amount: 1000, ...}  # CUGA-FLO extension — see below
   semantic: {evidence.contradictory_information: false}               # design doc §4.2/§6.2
@@ -293,7 +293,7 @@ adds the Decision Agent, G3 (content-identical to the app's default
 
 ```bash
 source .venv/bin/activate
-cuga-flo run-scenario loan_approval_simpn applications/loan_approval_simpn/scenarios/S02-regulatory-restriction.yaml \
+cuga-flo run-scenario loan_approval_simpn applications/loan_approval_simpn/scenarios/S04-regulatory-restriction.yaml \
     --configs G0,G1,G2,G3 --repetitions 3 --trace-dir traces/
 ```
 
@@ -303,14 +303,14 @@ the next — unattended N-repetitions-x-4-configs is the point, so this does not
 follow the manual three-terminal workflow `CLAUDE.md` documents for a single
 interactive run. Prints a progress line per `(config, scenario, repetition)`
 as it runs (`[G1] building and starting the SimPN service...`, then
-`[3/12] S02 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)`), then a
+`[3/12] S04 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)`), then a
 `goal`/`util`/`interv_f1`/`cycle_s` comparison table across configs.
-`loan_approval_simpn/scenarios/S02-regulatory-restriction.yaml`,
-`S03-slow-credit-check.yaml`, and `S04-unverifiable-id.yaml` all differentiate
+`loan_approval_simpn/scenarios/S04-regulatory-restriction.yaml`,
+`S05-slow-credit-check.yaml`, and `S02-unverifiable-id.yaml` all differentiate
 G-levels via **oversight** autonomy, through a different hook rule each (see
-each file's own comment for the expected story — S03's injects a semantic
+each file's own comment for the expected story — S05's injects a semantic
 fact mid-run via perturbation rather than a process variable set upfront, on
-top of its unrelated BPS duration-slowdown demo); `S05-large-loan-override.yaml`
+top of its unrelated BPS duration-slowdown demo); `S03-large-loan-override.yaml`
 differentiates them via **decision** autonomy instead — no hook involved at
 all, just whether the gateway is resolved by a bare native condition (G0/G1,
 blind to a policy override that isn't expressible as a flow condition) or a

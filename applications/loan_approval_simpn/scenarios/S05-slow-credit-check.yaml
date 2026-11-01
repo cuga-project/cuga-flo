@@ -14,7 +14,7 @@
 #    same shape as S02/S04: G0-G2 have no hook at all, so the fact lands but
 #    nothing acts on it — the loan is wrongly granted. Only G3 (which has the
 #    hook) catches it and halts before the loan-grant task.
-scenario_id: S03
+scenario_id: S05
 description: >
   Nominal applicant; the credit-check task is perturbed to take 5x as long once
   entered (a pure BPS slowdown, independent of autonomy level), and a semantic
@@ -48,7 +48,7 @@ expected_properties:
     - Activity_1h9ix55  # the loan must NOT be granted once the record is contradictory
   # decision_utility is about the gateway's own call, which reasons on credit score
   # alone — approving on a good score is correct on that basis, same reasoning as
-  # S02's acceptable_routes comment. The hook is a separate oversight layer.
+  # S04's acceptable_routes comment. The hook is a separate oversight layer.
   acceptable_routes:
     Flow_0ybszcv: 1.0
   intervention:

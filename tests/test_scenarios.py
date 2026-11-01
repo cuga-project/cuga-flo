@@ -297,8 +297,10 @@ def test_discover_scenarios_finds_every_yaml_file_sorted():
     names = [p.split("/")[-1] for p in paths]
     assert names == sorted(names)
     assert "S01-nominal.yaml" in names
-    assert "S02-regulatory-restriction.yaml" in names
-    assert "S03-slow-credit-check.yaml" in names
+    assert "S02-unverifiable-id.yaml" in names
+    assert "S03-large-loan-override.yaml" in names
+    assert "S04-regulatory-restriction.yaml" in names
+    assert "S05-slow-credit-check.yaml" in names
 
 
 def test_write_run_table_covers_multiple_scenarios_in_one_csv():
