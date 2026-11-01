@@ -1113,7 +1113,13 @@ under low autonomy for the harder scenario types.
   rows (each one a concrete case, unlike the slide's abstract "scenario
   type"), the actually-tested configs as columns, each cell the
   `ConfigAggregate.goal_achievement_rate` for that pair, formatted as a
-  rounded percentage (`N/A` where not computable).
+  rounded percentage (`N/A` where not computable); and a closing
+  **Footnotes** section (a module-level `_GLOSSARY: dict[str, str]`,
+  rendered as a bullet list) defining every column/term the tables above
+  use (`goal`, `util`, `interv_f1`, `cycle_s`, `GAR`, `mean_*`, `ΔGAR`, the
+  matrix cell) — added on request, so the report reads standalone without
+  anyone needing this source file open alongside it to know what a cell
+  means.
 - `src/cuga_flo/scenarios/cli.py`'s `run()` — new `report_path: Optional[str]`
   parameter; collects the `Scenario` objects it already loads per-path into a
   list (previously discarded after printing) and calls `write_report` with
@@ -1126,9 +1132,10 @@ under low autonomy for the harder scenario types.
 - `tests/test_scenarios.py`:
   `test_write_report_includes_scenarios_configs_and_the_scores_matrix` —
   two scenarios, two configs, hand-built `Scorecard`s, asserts the
-  Configuration/Scenarios/Results sections and the exact matrix rows
-  (`S01` agreeing at 100% across both configs, `S02` splitting 0%→100%).
-  69/69 passing across the full suite.
+  Configuration/Scenarios/Results sections, the exact matrix rows
+  (`S01` agreeing at 100% across both configs, `S02` splitting 0%→100%),
+  and the Footnotes section (asserts `GAR`, `interv_f1`, and `ΔGAR` are all
+  defined in it). 69/69 passing across the full suite.
 - Live: ran all five `loan_approval_simpn` scenarios under G0 (folder mode)
   with `--csv` and `--report` together — the generated markdown's
   Configuration section correctly lists all five scenario ids and `G0`;
@@ -1136,4 +1143,5 @@ under low autonomy for the harder scenario types.
   tables exactly; the scores matrix shows `S01: 100%` (the baseline, which
   G0 gets right) and `0%` for the other four (each one needs autonomy G0
   doesn't have), matching every one of those scenarios' already-verified
-  individual G0 behavior.
+  individual G0 behavior; the closing Footnotes section rendered cleanly
+  with no stray blank lines once the formatting was tightened.

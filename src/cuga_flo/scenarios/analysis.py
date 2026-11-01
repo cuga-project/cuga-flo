@@ -198,6 +198,55 @@ def _pct(value: float | None) -> str:
     return f"{round(value * 100)}%" if value is not None else "N/A"
 
 
+# Every column/term write_report's tables use, defined once so the report is
+# self-contained — a reader shouldn't have to find this source file to know what
+# "interv_f1" or "ΔGAR" means.
+_GLOSSARY: dict[str, str] = {
+    "config": "The autonomy configuration (G0-G3) this row's run used.",
+    "rep": "The repetition index within this (scenario, config) cell, 0-based.",
+    "goal (goal_achieved)": (
+        "Whether this run satisfied every expected property in the scenario's "
+        "oracle (`must`/`must_not`/`eventually`/`acceptable_routes`/required "
+        "intervention). `-` if the scenario has no oracle."
+    ),
+    "util (decision_utility)": (
+        "The `acceptable_routes` utility (0.0-1.0) of the route a decision "
+        "gateway actually chose. `-` if the scenario has no `acceptable_routes` "
+        "oracle or no gateway resolution to score."
+    ),
+    "interv_f1 (intervention_f1)": (
+        "F1 score of hook interventions against the scenario's "
+        "`intervention.required_after` oracle — did the hooks required to "
+        "intervene actually do so, and did any intervene that weren't "
+        "required. `-` if there's neither a required nor a fired hook to score."
+    ),
+    "cycle_s (cycle_time_seconds)": (
+        "Real, measured wall-clock seconds to run this case — near-zero for a "
+        "non-agentic config, since the simulator advances its own clock "
+        "logically rather than sleeping out a task's configured duration. "
+        "Distinct from the process's *simulated* duration "
+        "(`simulated_cycle_time_seconds`, available via `--csv`/`cuga-flo "
+        "evaluate` but not shown in this report)."
+    ),
+    "n": "Number of repetitions aggregated into this config's row.",
+    "GAR (Goal Achievement Rate)": (
+        "Fraction of this config's repetitions where `goal_achieved` was `True`."
+    ),
+    "mean_util": "Mean `decision_utility` across this config's repetitions.",
+    "mean_interv_f1": "Mean `intervention_f1` across this config's repetitions.",
+    "mean_cycle_s": "Mean wall-clock `cycle_time_seconds` across this config's repetitions.",
+    "ΔGAR (ablation)": (
+        "The change in Goal Achievement Rate between two autonomy configs "
+        "(e.g. `G1 -> G2`), isolating that specific autonomy layer's "
+        "incremental contribution."
+    ),
+    "Scores Matrix cell": (
+        "The same Goal Achievement Rate as GAR above, shown as a rounded "
+        "percentage, one per (scenario, config) pair."
+    ),
+}
+
+
 def write_report(
     app_name: str,
     scenarios: list[Scenario],
@@ -209,12 +258,14 @@ def write_report(
     """A markdown summary of one run-scenario invocation (single scenario or
     folder mode): which scenarios/configs/repetitions were run, each scenario's
     comparison/aggregate/ablation (same numbers runner.format_comparison/
-    format_aggregates/format_ablation print, as markdown tables here), and a
+    format_aggregates/format_ablation print, as markdown tables here), a
     Scenario x Configuration Goal Achievement Rate matrix — the same shape as
     the executive deck's "Scenario Type" x G0-G3 scorecard
     (CUGA_FLO_Prosimos_Executive_Integration_extended.pptx, slide 23), except
     with real scenario ids and real measured results instead of an illustrative
-    hypothetical pattern."""
+    hypothetical pattern — and a closing "Footnotes" glossary (_GLOSSARY)
+    explaining every column/term the tables above use, so the report is
+    readable standalone without finding this source file."""
     lines: list[str] = [
         f"# Scenario Run Report — {app_name}",
         "",
@@ -303,6 +354,10 @@ def write_report(
             agg = aggs_by_config.get(config)
             row.append(_pct(agg.goal_achievement_rate) if agg else "N/A")
         lines.append("| " + " | ".join(row) + " |")
+
+    lines += ["", "## Footnotes — What Each Measurement Means", ""]
+    for term, definition in _GLOSSARY.items():
+        lines.append(f"- **{term}** — {definition}")
     lines.append("")
 
     Path(report_path).write_text("\n".join(lines), encoding="utf-8")

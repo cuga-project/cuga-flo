@@ -329,6 +329,11 @@ def test_write_report_includes_scenarios_configs_and_the_scores_matrix():
     # the scores matrix: S01 agrees across configs (100%), S02 splits (0% -> 100%)
     assert "| S01 | 100% | 100% |" in text
     assert "| S02 | 0% | 100% |" in text
+    # the glossary explains every term the tables above actually use
+    assert "## Footnotes — What Each Measurement Means" in text
+    assert "**GAR (Goal Achievement Rate)**" in text
+    assert "**interv_f1 (intervention_f1)**" in text
+    assert "**ΔGAR (ablation)**" in text
 
 
 def test_write_run_table_covers_multiple_scenarios_in_one_csv():

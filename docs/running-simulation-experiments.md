@@ -375,6 +375,11 @@ This is the same shape as the matrix on slide 23 of the executive deck
 deck's illustrative hypothetical. Works in both single-scenario and folder
 mode; omit it and nothing changes (it's purely additive, same as `--csv`).
 
+The report closes with a **Footnotes** section defining every column/term
+the tables above use (`goal`, `util`, `interv_f1`, `GAR`, `ΔGAR`, ...) —
+written to be read standalone, so sharing just the `.md` file is enough;
+nobody needs this guide open alongside it to know what a cell means.
+
 ---
 
 ## 6. Where results are captured and analysed
