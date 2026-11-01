@@ -1,18 +1,26 @@
-# Same qualifying applicant as S01, but with a BPS perturbation: the credit-check
-# task's simulated duration is multiplied 5x the moment it's entered. This exercises
-# the perturbation-injection mechanism itself (observable via the evaluator's
-# cycle_time_seconds), independent of autonomy level — a pure operational slowdown,
-# not something any G-level is expected to "recover" from differently. It also
-# demonstrates a semantic-world fact being injected mid-run, purely to show the
-# mechanism: nothing in this demo app's policies currently reads
-# `semantic.evidence.contradictory_information`, so it has no behavioral effect here
-# — it's there to prove the fact actually lands in process_variables, visible to a
-# future policy that does reason about it.
+# Same qualifying applicant as S01, but with two perturbations:
+#
+# 1. A pure BPS one: the credit-check task's simulated duration is multiplied 5x
+#    the moment it's entered. Independent of autonomy level — observable via
+#    simulated_cycle_time_seconds, not something any G-level is expected to
+#    "recover" from differently.
+#
+# 2. A semantic one: `semantic.evidence.contradictory_information` is set to
+#    `true` right after the gateway resolves (i.e. after the credit decision, but
+#    before the approval-path hook runs). hook-approval_intercept.md's Rule 2 now
+#    reads this fact and terminates the case outright if it's set — this used to
+#    have no behavioral effect anywhere in this app (nothing read the fact); now
+#    it does, and this scenario is ALSO an oversight-autonomy differentiator, the
+#    same shape as S02/S04: G0-G2 have no hook at all, so the fact lands but
+#    nothing acts on it — the loan is wrongly granted. Only G3 (which has the
+#    hook) catches it and halts before the loan-grant task.
 scenario_id: S03
 description: >
   Nominal applicant; the credit-check task is perturbed to take 5x as long once
-  entered, and a semantic fact arrives after the gateway resolves. Demonstrates
-  perturbation injection mechanically rather than testing autonomy differentiation.
+  entered (a pure BPS slowdown, independent of autonomy level), and a semantic
+  fact — contradictory evidence discovered after the gateway resolves — arrives
+  mid-run. hook-approval_intercept.md's Rule 2 halts the case on this fact; only
+  G3 has the hook to catch it, so G0-G2 wrongly grant the loan while G3 halts.
 
 initial_state:
   process_variables:
@@ -33,11 +41,16 @@ perturbations:
 
 expected_properties:
   eventually:
-    - case_resolved
+    - case_resolved  # True for a halted case too — see _case_resolved
   must:
-    - Activity_0oydey5
-  must_not: []
+    - Activity_0oydey5  # credit check still ran before the hook halts the case
+  must_not:
+    - Activity_1h9ix55  # the loan must NOT be granted once the record is contradictory
+  # decision_utility is about the gateway's own call, which reasons on credit score
+  # alone — approving on a good score is correct on that basis, same reasoning as
+  # S02's acceptable_routes comment. The hook is a separate oversight layer.
   acceptable_routes:
     Flow_0ybszcv: 1.0
   intervention:
-    required_after: []
+    required_after:
+      - Flow_0ybszcv  # the approval-path hook must halt the case for this evidence
