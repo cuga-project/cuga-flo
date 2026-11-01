@@ -13,7 +13,7 @@ import pytest
 
 from cuga_flo.evaluation.metrics import Scorecard
 from cuga_flo.scenarios import author
-from cuga_flo.scenarios.analysis import _activity_columns, aggregate, format_ablation, write_run_table
+from cuga_flo.scenarios.analysis import _activity_columns, aggregate, format_ablation, write_report, write_run_table
 from cuga_flo.scenarios.schema import Scenario
 
 # ── author.py ────────────────────────────────────────────────────────────────────
@@ -301,6 +301,34 @@ def test_discover_scenarios_finds_every_yaml_file_sorted():
     assert "S03-large-loan-override.yaml" in names
     assert "S04-regulatory-restriction.yaml" in names
     assert "S05-slow-credit-check.yaml" in names
+
+
+def test_write_report_includes_scenarios_configs_and_the_scores_matrix():
+    """--report's markdown summary: which scenarios/configs ran, each scenario's
+    comparison/aggregate/ablation, and the Scenario x Configuration GAR matrix
+    (same shape as the executive deck's "Scenario Type" scorecard slide)."""
+    scenarios = [
+        Scenario(scenario_id="S01", description="A nominal, well-qualified applicant."),
+        Scenario(scenario_id="S02", description="An applicant with a malformed id."),
+    ]
+    multi_results = {
+        "S01": {"G0": [_card(goal_achieved=True)], "G3": [_card(goal_achieved=True)]},
+        "S02": {"G0": [_card(goal_achieved=False)], "G3": [_card(goal_achieved=True)]},
+    }
+    path = tempfile.mktemp()
+    write_report("loan_approval_simpn", scenarios, ["G0", "G3"], 1, multi_results, path)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+
+    assert "Scenario Run Report — loan_approval_simpn" in text
+    assert "**Scenarios run:** S01, S02" in text
+    assert "**Autonomy configs tested:** G0, G3" in text
+    assert "A nominal, well-qualified applicant." in text
+    assert "### S01" in text
+    assert "### S02" in text
+    # the scores matrix: S01 agrees across configs (100%), S02 splits (0% -> 100%)
+    assert "| S01 | 100% | 100% |" in text
+    assert "| S02 | 0% | 100% |" in text
 
 
 def test_write_run_table_covers_multiple_scenarios_in_one_csv():

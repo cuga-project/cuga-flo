@@ -8,7 +8,13 @@ from typing import Optional
 
 import yaml
 
-from cuga_flo.scenarios.analysis import aggregate, format_ablation, format_aggregates, write_run_table
+from cuga_flo.scenarios.analysis import (
+    aggregate,
+    format_ablation,
+    format_aggregates,
+    write_report,
+    write_run_table,
+)
 from cuga_flo.scenarios.author import author_scenario
 from cuga_flo.scenarios.runner import discover_scenarios, format_comparison, load_scenario, run_matrix_many
 
@@ -20,6 +26,7 @@ def run(
     repetitions: int,
     trace_dir: str,
     csv_path: Optional[str] = None,
+    report_path: Optional[str] = None,
 ) -> int:
     """`scenario_path` is either one scenario YAML (the original, still-supported
     form) or a directory of them — run-scenario's folder mode, every `*.yaml`
@@ -39,8 +46,10 @@ def run(
         scenario_paths = [scenario_path]
 
     multi_results = run_matrix_many(app_name, scenario_paths, configs, repetitions, trace_dir)
+    scenarios = []
     for path in scenario_paths:
         scenario = load_scenario(path)
+        scenarios.append(scenario)
         results = multi_results[scenario.scenario_id]
         print()
         print(format_comparison(scenario, results))
@@ -51,6 +60,9 @@ def run(
     if csv_path:
         write_run_table(multi_results, csv_path, trace_dir, app_name)
         print(f"\nPer-run table written to {csv_path}")
+    if report_path:
+        write_report(app_name, scenarios, configs, repetitions, multi_results, report_path)
+        print(f"\nSummary report written to {report_path}")
     return 0
 
 

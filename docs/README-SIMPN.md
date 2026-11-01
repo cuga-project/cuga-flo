@@ -371,6 +371,15 @@ app's own BPMN file via `_activity_columns`, not from any one run — fixed per
 app since the model doesn't change across G0-G3) recording whether that run's
 execution path reached it at all, ready to load into pandas/R/statsmodels.
 
+`--report PATH` writes a single markdown file instead — `analysis.write_report` —
+with the scenarios/configs/repetitions run, each scenario's comparison/aggregate/
+ablation as markdown tables, and a **Scenario × Configuration Goal Achievement
+Rate matrix** (one row per scenario, one column per config, cell = GAR). This
+mirrors the "Scenario Type" × G0-G3 scorecard on slide 23 of
+`CUGA_FLO_Prosimos_Executive_Integration_extended.pptx` — same shape, but every
+cell is a real measured result, not that slide's illustrative hypothetical
+pattern.
+
 What this deliberately does **not** do is fit a real mixed-effects model (§16.1-
 §16.3) or test the `AutonomyLevel × PerturbationSeverity` interaction (§16.3) — see
 `analysis.py`'s module docstring: a demo's N=1-3 repetitions per cell isn't enough

@@ -345,6 +345,36 @@ one combined file covering every scenario's rows, disambiguated by its
 individual `run-scenario` invocations is now built in. The single-scenario
 form above is unchanged and still the right tool when you only want one.
 
+### A markdown summary report
+
+`--report PATH` writes a single markdown file summarizing the whole
+invocation — which scenarios and configs were run, each scenario's
+comparison/aggregate/ablation (as proper markdown tables, not the terminal's
+plain-text ones), and a **Scenario × Configuration Goal Achievement Rate
+matrix**, one row per scenario and one column per config tested, each cell
+the GAR for that pair:
+
+```bash
+cuga-flo run-scenario loan_approval_simpn \
+    applications/loan_approval_simpn/scenarios \
+    --configs G0,G1,G2,G3 --repetitions 1 \
+    --trace-dir traces/ --csv traces/all_runs.csv --report traces/report.md
+```
+
+```
+| Scenario | G0 | G1 | G2 | G3 |
+|---|---|---|---|---|
+| S01 | 100% | 100% | 100% | 100% |
+| S02 | 0%   | 0%   | 0%   | 100% |
+| ...
+```
+
+This is the same shape as the matrix on slide 23 of the executive deck
+(`.claude/plans/CUGA_FLO_Prosimos_Executive_Integration_extended.pptx`) —
+`--report` produces the real thing from real measured results, not the
+deck's illustrative hypothetical. Works in both single-scenario and folder
+mode; omit it and nothing changes (it's purely additive, same as `--csv`).
+
 ---
 
 ## 6. Where results are captured and analysed
@@ -520,6 +550,18 @@ decide for each applicant, and which path did it take?" directly, without
 re-opening individual trace files. This is the point to reach for a
 confidence interval, a plot across more scenarios, or
 (once you have enough repetitions to justify it — see §6) a real statistical model.
+
+### Reading the markdown report
+
+`--report traces/report.md` (§5) gives a shareable, single-file version of
+everything above — no terminal, no CSV, no pandas needed to see the shape of
+a result. It opens with which scenarios and configs were actually run, then
+every scenario's comparison/aggregate/ablation as proper markdown tables, and
+closes with the Scenario × Configuration GAR matrix: scan down a column to
+see one config's performance across every scenario, or across a row to see
+how one scenario's outcome shifts as autonomy increases — exactly the
+executive-summary question the Prosimos deck's own matrix slide posed
+hypothetically, now answered from real runs.
 
 ### What's still out of scope for review
 

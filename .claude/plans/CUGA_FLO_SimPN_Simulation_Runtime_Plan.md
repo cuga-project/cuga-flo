@@ -67,6 +67,15 @@
 >   duration-perturbation demo S05 already did. Live-verified both halves
 >   with real LLM calls, including catching and correctly diagnosing an LLM
 >   timeout (not a policy bug) on the first G3 attempt.
+> - **Milestone 11 — `--report`, a markdown summary with a Scenario ×
+>   Configuration scores matrix** (see the new section at the end):
+>   `analysis.write_report` writes which scenarios/configs/repetitions ran,
+>   each scenario's comparison/aggregate/ablation as markdown tables, and a
+>   Goal Achievement Rate matrix in the same shape as slide 23 of
+>   `CUGA_FLO_Prosimos_Executive_Integration_extended.pptx`'s "Scenario Type"
+>   × G0-G3 scorecard — except with real scenario ids and real measured
+>   results, not that slide's illustrative hypothetical pattern. Purely
+>   additive, like `--csv`; omitting it changes nothing.
 >
 > Supersedes `CUGA_FLO_simulation_experimental_setup_v2.md` and
 > `CUGA_FLO_Prosimos_Executive_Integration.md` for the engine choice (SimPN, not
@@ -1062,3 +1071,69 @@ contradictory information was discovered..."*) purely from inspecting the
 process variables available in its context, not from being told the key
 name in the policy text. The softer wording is at least as reliable, and
 reads like an actual policy rather than leaking engine internals into it.
+
+## Milestone 11 — `--report`, a markdown summary with a Scenario × Configuration scores matrix
+
+### The ask
+
+`run-scenario --csv` gives a per-run table, but nothing produces a readable,
+shareable summary of a whole invocation — which scenarios and configs ran,
+each one's results, and (the specific ask) a scores matrix across every
+tested configuration in the same shape as a slide from the project's own
+executive deck.
+
+### Finding the right slide
+
+The first pptx handed over
+(`CUGA_FLO_Prosimos_Executive_Integration.pptx`) only has 10 slides — no
+slide 23 exists in it. Asked the user to point at the right file rather than
+guessing a matrix format; the correct one,
+`CUGA_FLO_Prosimos_Executive_Integration_extended.pptx`, has 25 slides, and
+presentation *order* doesn't match the internal `slideN.xml` numbering
+(PowerPoint's zip layout keeps insertion order, not display order) — had to
+resolve `ppt/presentation.xml`'s `<p:sldId>` list through
+`ppt/_rels/presentation.xml.rels` to find that presentation-position 23 maps
+to `ppt/slides/slide10.xml`. That slide, "From Scenarios to Comparison: G0
+vs G1 vs G2 vs G3," is a **Scenario Type × G0-G3** table of percentages
+(explicitly labeled *"Illustrative hypothetical pattern — not measured
+results"*) — rows like "Nominal," "Resource unavailable," "Contradictory /
+new evidence," columns G0-G3, cells a success percentage that degrades more
+under low autonomy for the harder scenario types.
+
+### Implementation
+
+- `src/cuga_flo/scenarios/analysis.py`'s new `write_report(app_name,
+  scenarios, configs, repetitions, multi_results, report_path)` — a markdown
+  file with: a Configuration section (scenarios/configs/repetitions run), a
+  Scenarios table (id + description), a Results section with one subsection
+  per scenario (per-run comparison, per-config aggregates, and ablation, each
+  as a markdown table — reusing `aggregate()`'s computation, just formatted
+  as markdown instead of `format_aggregates`/`format_ablation`'s plain text),
+  and the Scenario × Configuration GAR matrix itself — real scenario ids as
+  rows (each one a concrete case, unlike the slide's abstract "scenario
+  type"), the actually-tested configs as columns, each cell the
+  `ConfigAggregate.goal_achievement_rate` for that pair, formatted as a
+  rounded percentage (`N/A` where not computable).
+- `src/cuga_flo/scenarios/cli.py`'s `run()` — new `report_path: Optional[str]`
+  parameter; collects the `Scenario` objects it already loads per-path into a
+  list (previously discarded after printing) and calls `write_report` with
+  them once, after the existing `--csv` write.
+- `src/cuga_flo/cli/__init__.py` — new `--report PATH` typer option, help
+  text and docstring updated.
+
+### Verification
+
+- `tests/test_scenarios.py`:
+  `test_write_report_includes_scenarios_configs_and_the_scores_matrix` —
+  two scenarios, two configs, hand-built `Scorecard`s, asserts the
+  Configuration/Scenarios/Results sections and the exact matrix rows
+  (`S01` agreeing at 100% across both configs, `S02` splitting 0%→100%).
+  69/69 passing across the full suite.
+- Live: ran all five `loan_approval_simpn` scenarios under G0 (folder mode)
+  with `--csv` and `--report` together — the generated markdown's
+  Configuration section correctly lists all five scenario ids and `G0`;
+  each scenario's Results subsection matches the terminal's own printed
+  tables exactly; the scores matrix shows `S01: 100%` (the baseline, which
+  G0 gets right) and `0%` for the other four (each one needs autonomy G0
+  doesn't have), matching every one of those scenarios' already-verified
+  individual G0 behavior.

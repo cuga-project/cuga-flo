@@ -50,6 +50,7 @@ def run_scenario(
     repetitions: int = typer.Option(1, "--repetitions", help="Repetitions per config."),
     trace_dir: str = typer.Option("traces", "--trace-dir", help="Directory for per-repetition unified-trace files."),
     csv: Optional[str] = typer.Option(None, "--csv", help="Write one row per (scenario, config, repetition) here — design doc §16's own comparison table."),
+    report: Optional[str] = typer.Option(None, "--report", help="Write a markdown summary report here — scenarios/configs run, each one's comparison/aggregate/ablation, and a Scenario x Configuration Goal Achievement Rate matrix."),
 ) -> None:
     """
     Run one frozen scenario, or every scenario in a directory, across one or more
@@ -64,11 +65,14 @@ def run_scenario(
     §16.4 — descriptive, not a fitted mixed-effects model; see
     cuga_flo.scenarios.analysis's module docstring for why, and --csv for the raw
     per-run table, combined across every scenario run, a real model would be fit
-    over externally).
+    over externally). --report additionally writes a markdown summary of the
+    whole run, including a Scenario x Configuration scores matrix.
     """
     from cuga_flo.scenarios.cli import run as run_scenario_matrix
 
-    raise typer.Exit(run_scenario_matrix(app_name, scenario_path, configs.split(","), repetitions, trace_dir, csv))
+    raise typer.Exit(
+        run_scenario_matrix(app_name, scenario_path, configs.split(","), repetitions, trace_dir, csv, report)
+    )
 
 
 @app.command("author-scenario")

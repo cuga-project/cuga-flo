@@ -26,12 +26,14 @@ from __future__ import annotations
 import csv
 import re
 from dataclasses import dataclass, fields
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from cuga_flo.evaluation.metrics import Scorecard
 from cuga_flo.evaluation.trace_run import TraceRun
 from cuga_flo.scenarios.runner import trace_path_for
+from cuga_flo.scenarios.schema import Scenario
 
 _CONFIG_ORDER = ["G0", "G1", "G2", "G3"]
 _ABLATION_PAIRS = [("G0", "G1"), ("G1", "G2"), ("G2", "G3"), ("G0", "G3")]
@@ -190,3 +192,117 @@ def format_ablation(aggregates: list[ConfigAggregate]) -> str:
 
 def _fmt(value: float | None) -> str:
     return f"{value:.2f}" if value is not None else "-"
+
+
+def _pct(value: float | None) -> str:
+    return f"{round(value * 100)}%" if value is not None else "N/A"
+
+
+def write_report(
+    app_name: str,
+    scenarios: list[Scenario],
+    configs: list[str],
+    repetitions: int,
+    multi_results: dict[str, dict[str, list[Scorecard]]],
+    report_path: str,
+) -> None:
+    """A markdown summary of one run-scenario invocation (single scenario or
+    folder mode): which scenarios/configs/repetitions were run, each scenario's
+    comparison/aggregate/ablation (same numbers runner.format_comparison/
+    format_aggregates/format_ablation print, as markdown tables here), and a
+    Scenario x Configuration Goal Achievement Rate matrix — the same shape as
+    the executive deck's "Scenario Type" x G0-G3 scorecard
+    (CUGA_FLO_Prosimos_Executive_Integration_extended.pptx, slide 23), except
+    with real scenario ids and real measured results instead of an illustrative
+    hypothetical pattern."""
+    lines: list[str] = [
+        f"# Scenario Run Report — {app_name}",
+        "",
+        f"Generated: {datetime.now(timezone.utc).isoformat(timespec='seconds')}Z",
+        "",
+        "## Configuration",
+        "",
+        f"- **Scenarios run:** {', '.join(s.scenario_id for s in scenarios)}",
+        f"- **Autonomy configs tested:** {', '.join(configs)}",
+        f"- **Repetitions per (scenario, config):** {repetitions}",
+        "",
+        "## Scenarios",
+        "",
+        "| ID | Description |",
+        "|---|---|",
+    ]
+    for s in scenarios:
+        # Collapse the YAML block scalar's internal newlines into one line for
+        # the table cell.
+        desc = " ".join(s.description.split())
+        lines.append(f"| {s.scenario_id} | {desc} |")
+
+    lines += ["", "## Results"]
+    for s in scenarios:
+        results = multi_results[s.scenario_id]
+        aggs = aggregate(results)
+        lines += [
+            "",
+            f"### {s.scenario_id}",
+            "",
+            "**Per-run comparison**",
+            "",
+            "| config | rep | goal | util | interv_f1 | cycle_s |",
+            "|---|---|---|---|---|---|",
+        ]
+        for config, cards in results.items():
+            for i, card in enumerate(cards):
+                cycle = f"{card.cycle_time_seconds:.1f}" if card.cycle_time_seconds is not None else "-"
+                lines.append(
+                    f"| {config} | {i} | {card.goal_achieved} | {card.decision_utility} | "
+                    f"{card.intervention_f1} | {cycle} |"
+                )
+
+        lines += [
+            "",
+            "**Per-config aggregates**",
+            "",
+            "| config | n | GAR | mean_util | mean_interv_f1 | mean_cycle_s |",
+            "|---|---|---|---|---|---|",
+        ]
+        for a in aggs:
+            lines.append(
+                f"| {a.config} | {a.n} | {_fmt(a.goal_achievement_rate)} | "
+                f"{_fmt(a.mean_decision_utility)} | {_fmt(a.mean_intervention_f1)} | "
+                f"{_fmt(a.mean_cycle_time_seconds)} |"
+            )
+
+        lines += ["", "**Ablation (ΔGAR — Goal Achievement Rate)**", ""]
+        by_config = {a.config: a for a in aggs}
+        any_pair = False
+        for a_name, b_name in _ABLATION_PAIRS:
+            if a_name in by_config and b_name in by_config:
+                ga, gb = by_config[a_name].goal_achievement_rate, by_config[b_name].goal_achievement_rate
+                if ga is not None and gb is not None:
+                    lines.append(f"- {a_name} -> {b_name}: {gb - ga:+.2f}")
+                    any_pair = True
+        if not any_pair:
+            lines.append("- (need at least two of G0-G3 with a known goal_achievement_rate)")
+
+    lines += [
+        "",
+        "## Scores Matrix — Goal Achievement Rate by Scenario × Configuration",
+        "",
+        "Same shape as the executive deck's \"Scenario Type\" scorecard "
+        "(`CUGA_FLO_Prosimos_Executive_Integration_extended.pptx`, slide 23) — "
+        "real scenario ids and real measured results here, not an illustrative "
+        "hypothetical.",
+        "",
+        "| Scenario | " + " | ".join(configs) + " |",
+        "|---|" + "---|" * len(configs),
+    ]
+    for s in scenarios:
+        aggs_by_config = {a.config: a for a in aggregate(multi_results[s.scenario_id])}
+        row = [s.scenario_id]
+        for config in configs:
+            agg = aggs_by_config.get(config)
+            row.append(_pct(agg.goal_achievement_rate) if agg else "N/A")
+        lines.append("| " + " | ".join(row) + " |")
+    lines.append("")
+
+    Path(report_path).write_text("\n".join(lines), encoding="utf-8")
