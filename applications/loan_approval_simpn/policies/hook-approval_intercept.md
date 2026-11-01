@@ -13,16 +13,17 @@ match.
 
 ## Rule 2 — Contradictory evidence discovered
 
-Check the `semantic.evidence.contradictory_information` process variable. If it is
-exactly `true`, the applicant's record contains an internal contradiction discovered
-after the credit decision was already made — granting the loan on an inconsistent
-record is itself a compliance risk, independent of credit score or applicant ID.
+In case contradictory information arises during process execution — the applicant's
+record contains facts that conflict with one another, discovered after the credit
+decision was already made — the case must be halted outright. Granting the loan on
+a record that contradicts itself is a compliance risk in its own right, independent
+of credit score or applicant ID.
 
-Use action `terminate` with `message` set to
-`"halted: contradictory information discovered after approval"`. Do not grant the
-loan. Do not skip to another node — this case is halted outright, not redirected to
-rejection, since the inconsistency itself (not a credit judgment) is what's being
-flagged. Do not evaluate Rule 1 if this rule applies.
+Use action `terminate` with `message` set to a brief explanation of the
+contradiction found. Do not grant the loan. Do not skip to another node — this case
+is halted outright, not redirected to rejection, since the inconsistency itself (not
+a credit judgment) is what's being flagged. Do not evaluate Rule 1 if this rule
+applies.
 
 ## Rule 1 — Regulatory restriction (exact applicant ID)
 
@@ -42,7 +43,7 @@ These variables signal to the rejection handler that the rejection is intentiona
 
 ## Default
 
-If `semantic.evidence.contradictory_information` is not exactly `true`, and the
-applicant ID is not exactly `"4321"` — including `"23"`, `"321"`, `"4320"`, and any
-other value — return `continue` with no `state_updates`, no `target_node`, and no
+If the applicant's record contains no contradictory information, and the applicant
+ID is not exactly `"4321"` — including `"23"`, `"321"`, `"4320"`, and any other
+value — return `continue` with no `state_updates`, no `target_node`, and no
 `message`. Do not modify any process variables.

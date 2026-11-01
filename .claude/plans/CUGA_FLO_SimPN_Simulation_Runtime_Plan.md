@@ -1042,3 +1042,23 @@ fails, read the trace before concluding the new code is wrong.
   approval threshold... loan amount... well below the $50,000 override
   limit") confirms the LLM read `decision-credit_decision.md`'s override
   rule correctly too, consistent with Milestone 9's finding.
+
+### Wording revision — naming the key vs. describing the concept
+
+The first version of Rule 2 named the internal variable explicitly: "Check
+the `semantic.evidence.contradictory_information` process variable. If it is
+exactly `true`..." On review, this coupled a policy document — meant to read
+like a real regulatory/business rule — to an engine-internal implementation
+detail an actual compliance policy would never reference. Reworded to plain
+business language instead: *"In case contradictory information arises during
+process execution... the case must be halted outright,"* with no mention of
+the variable's dotted key anywhere in the file (the `## Default` section's
+fallback condition was reworded the same way). Re-verified live under G3
+with the softened wording, same scenario, same real LLM call: `goal=True`,
+`intervention_f1=1.0`, and — notably — the hook's own trace message shows
+it located and named the actual variable itself (*"The process variable
+'semantic.evidence.contradictory_information' is True, indicating
+contradictory information was discovered..."*) purely from inspecting the
+process variables available in its context, not from being told the key
+name in the policy text. The softer wording is at least as reliable, and
+reads like an actual policy rather than leaking engine internals into it.
