@@ -8,12 +8,17 @@ once, unconditionally, before the case's first token is seeded.
 
 Stdlib only — no `cuga_flo` import here, see the package docstring.
 
-ponytail: `bps_change` supports exactly one key shape —
-`activities.<element_id>.duration_multiplier` — because that's the only BPS lever
-with a real effect given engine.py's one-`DecProblem`-per-instance scope (no
-cross-case resource contention to perturb). Anything else is recorded, not applied,
-in `state["_unsupported_perturbations"]` — visible to the evaluator, never silently
-dropped. Upgrade path: once resource contention is modeled, extend here.
+ponytail: `bps_change` supports exactly two key shapes —
+`activities.<element_id>.duration_multiplier` and, since the time/cost plan,
+`gateways.<element_id>.duration_multiplier` (gateways now have their own
+configurable duration too — see engine.py's `_duration`) — because those are
+the only BPS levers with a real effect given engine.py's one-`DecProblem`-per-
+instance scope (no cross-case resource contention to perturb). Both land in the
+same `state["_duration_overrides"]` dict, keyed by raw element id — the prefix
+is just which noun a scenario author writes, not a different mechanism.
+Anything else is recorded, not applied, in `state["_unsupported_perturbations"]`
+— visible to the evaluator, never silently dropped. Upgrade path: once resource
+contention is modeled, extend here.
 
 `semantic_change`/`initial_state.semantic` land as `semantic.<dotted.key>` entries in
 `process_variables` — the "thin semantic world" layer is deliberately just more
@@ -26,7 +31,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_DURATION_MULTIPLIER_RE = re.compile(r"^activities\.(.+)\.duration_multiplier$")
+_DURATION_MULTIPLIER_RE = re.compile(r"^(?:activities|gateways)\.(.+)\.duration_multiplier$")
 
 
 def parse_trigger(when: str) -> tuple[str, str]:

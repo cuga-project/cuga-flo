@@ -35,11 +35,14 @@ def evaluate(
         None, "--expected", help="expected_properties YAML — unlocks goal_achieved/decision_utility/intervention_f1."
     ),
     run_id: Optional[str] = typer.Option(None, "--run-id", help="Required if the file holds more than one run."),
+    simpn_parameters: Optional[str] = typer.Option(
+        None, "--simpn-parameters", help="simpn_parameters.yaml with hourly_rate/model_token_cost — unlocks simulated_cost/agentic_cost/total_cost."
+    ),
 ) -> None:
     """Print the deterministic-evaluator scorecard for one run's unified trace."""
     from cuga_flo.evaluation.cli import run as run_evaluate
 
-    raise typer.Exit(run_evaluate(trace_path, expected, run_id))
+    raise typer.Exit(run_evaluate(trace_path, expected, run_id, simpn_parameters))
 
 
 @app.command("run-scenario")

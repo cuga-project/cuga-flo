@@ -86,15 +86,21 @@ workflow_engine:
 ```
 
 **`simpn_parameters.yaml`** — the BPS side of the simulation: how long each task
-takes when nothing perturbs it.
+(and gateway) takes when nothing perturbs it, and (optionally) what that time
+and any agentic token usage cost.
 
 ```yaml
 tasks:
   Activity_0oydey5:   # check credit
-    duration_seconds: 2
+    duration_seconds: 2        # flat, or a `duration: {distribution: exponential, mean: 2}` block (also normal/triangular/uniform)
+    hourly_rate: 45.0          # optional — $/hour, read by the evaluator only, see §6
   Activity_1h9ix55:   # give loan of 1000 USD
     duration_seconds: 1
   # one entry per task element id in the BPMN model
+gateways:
+  Gateway_09ad5fc:
+    hourly_rate: 35.0          # optional — gateways default to an instantaneous (0s) duration if unconfigured
+model_token_cost: 0.000002     # optional — $/token, one flat rate for the whole run
 ```
 
 **`expected_properties/*.yaml`** — the oracle for a single manual run through
@@ -206,8 +212,9 @@ have no observable effect.
 
 ### What `bps_change` can actually do
 
-Only one key shape has a real effect: **`activities.<element_id>.duration_multiplier`**
-— it scales that task's configured duration for the rest of the run. This engine
+Only two key shapes have a real effect: **`activities.<element_id>.duration_multiplier`**
+(a task) and **`gateways.<element_id>.duration_multiplier`** (a gateway) — each scales
+that element's configured duration for the rest of the run. This engine
 doesn't model resource contention/capacity between cases (see README-SIMPN.md's
 "Known gaps"), so anything else under `bps_change` — `resources.X.capacity`, etc. —
 is recorded as `unsupported_bps_keys` in the trace rather than applied. If the idea
@@ -396,7 +403,8 @@ repetition)` is written automatically under `--trace-dir`, named
 
 ### The deterministic evaluator
 
-`cuga-flo evaluate <trace.jsonl> [--expected <properties.yaml>] [--run-id ID]`
+`cuga-flo evaluate <trace.jsonl> [--expected <properties.yaml>] [--run-id ID]
+[--simpn-parameters <simpn_parameters.yaml>]`
 reads one trace and prints a JSON **scorecard**:
 
 ```json
@@ -405,6 +413,7 @@ reads one trace and prints a JSON **scorecard**:
   "process_completed": true,
   "cycle_time_seconds": 17.5,
   "simulated_cycle_time_seconds": 4.0,
+  "total_agent_duration_seconds": 3.2,
   "activity_count": 6,
   "agent_task_invocations": 1,
   "agent_gateway_invocations": 1,
@@ -416,6 +425,9 @@ reads one trace and prints a JSON **scorecard**:
   "intervention_precision": 1.0,
   "intervention_recall": 1.0,
   "intervention_f1": 1.0,
+  "simulated_cost": 0.04,
+  "agentic_cost": 0.01,
+  "total_cost": 0.05,
   "not_yet_computable": {"perturbation_recovered": "..."}
 }
 ```
@@ -424,7 +436,13 @@ The first group (`process_completed` through `hook_target_fallbacks`) is always
 computed from the trace alone. `goal_achieved`, `decision_utility`, and
 `intervention_*` need an `expected_properties` oracle — either a standalone file
 (§2) for a manual run, or the scenario's own `expected_properties:` block,
-automatically, for `run-scenario`. `not_yet_computable` lists anything the tool
+automatically, for `run-scenario`. `simulated_cost`/`agentic_cost`/`total_cost`
+need `--simpn-parameters` instead (automatic for `run-scenario` — see §6);
+`simulated_cost` prices every task/gateway that both fired and has a configured
+`hourly_rate`, `agentic_cost` is `total_agent_tokens * model_token_cost` (a
+confirmed `0.0`, not missing, for a run like G0 that made no agentic call at
+all — `total_cost` stays computable from `simulated_cost` alone in that case).
+`not_yet_computable` lists anything the tool
 deliberately refuses to guess at rather than silently reporting a wrong number —
 check that dict before trusting a metric's absence means "zero."
 
@@ -448,12 +466,17 @@ layers three more views on top automatically:
 
 1. The **per-run comparison table** (every repetition, one row each).
 2. **Per-config aggregates** — Goal Achievement Rate, mean decision utility, mean
-   intervention F1, mean cycle time, across that config's repetitions.
+   intervention F1, mean cycle time, mean total cost, mean agent duration,
+   across that config's repetitions. The cost/agent-duration columns read `-`
+   with no `hourly_rate`/`model_token_cost` configured anywhere in
+   `simpn_parameters.yaml` — `run-scenario` loads that file for you
+   automatically, no extra flag needed.
 3. The **G0→G1→G2→G3 ablation** — the change in Goal Achievement Rate at each
    step, the direct answer to "what did adding this layer of autonomy buy us?"
 
 `--csv PATH` additionally writes one row per `(scenario, config, repetition)`
-with every scorecard field, plus that run's actual process input and execution
+with every scorecard field — including `simulated_cost`/`agentic_cost`/
+`total_cost`/`total_agent_duration_seconds` — plus that run's actual process input and execution
 result —
 `input_<key>`/`output_<key>` columns, one pair per process variable, read back
 from the run's own trace file (`TraceRun.initial_variables`/`final_variables`;

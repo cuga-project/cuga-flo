@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import operator as _op
+import random
 import re
 import uuid
 from collections.abc import Callable
@@ -238,10 +239,44 @@ def _ctx(
     }
 
 
-def _duration(task_id: str, simpn_params: dict) -> float:
-    return (simpn_params.get("tasks", {}).get(task_id, {}) or {}).get(
-        "duration_seconds", _DEFAULT_DURATION_SECONDS
-    )
+_DURATION_SAMPLERS: dict[str, Callable[[dict], float]] = {
+    "exponential": lambda p: random.expovariate(1 / p["mean"]),
+    # ponytail: clipped at 0 -- a negative duration is nonsensical, but clipping a
+    # Gaussian shifts its effective shape slightly near zero. A real, documented
+    # limitation, not hidden.
+    "normal": lambda p: max(0.0, random.gauss(p["mean"], p["stddev"])),
+    "triangular": lambda p: random.triangular(p["low"], p["high"], p.get("mode")),
+    "uniform": lambda p: random.uniform(p["low"], p["high"]),
+}
+
+
+def _duration(element_id: str, simpn_params: dict, section: str = "tasks", default: float = _DEFAULT_DURATION_SECONDS) -> float:
+    """Looks up `element_id`'s duration under `simpn_params[section]`. Either a
+    flat `duration_seconds`, or a `duration: {distribution: ..., ...}` block
+    sampled fresh via `_DURATION_SAMPLERS` -- never both (see the plan's "fail
+    loud, not silently" discipline). `default` lets callers pick a different
+    fallback per section: tasks default to `_DEFAULT_DURATION_SECONDS` (1.0,
+    today's existing behavior); gateways default to 0.0 so an app with no
+    `gateways:` section at all keeps resolving instantly, exactly as before this
+    was added."""
+    entry = (simpn_params.get(section, {}).get(element_id, {}) or {})
+    has_flat = "duration_seconds" in entry
+    has_dist = "duration" in entry
+    if has_flat and has_dist:
+        raise ValueError(
+            f"{section}.{element_id}: specify duration_seconds or duration, not both"
+        )
+    if has_dist:
+        spec = entry["duration"]
+        dist_name = spec.get("distribution")
+        sampler = _DURATION_SAMPLERS.get(dist_name)
+        if sampler is None:
+            raise ValueError(
+                f"{section}.{element_id}: unknown distribution {dist_name!r} "
+                f"(known: {sorted(_DURATION_SAMPLERS)})"
+            )
+        return sampler(spec)
+    return entry.get("duration_seconds", default)
 
 
 def _resolve_hook_target(
@@ -405,6 +440,12 @@ def build_problem(
 
         def behavior(state: dict):
             check_point(state, eid, "enter")
+            # default=0.0, not the task default: a gateway with no `gateways:`
+            # entry at all (every app before this was added) keeps resolving
+            # instantly, exactly as before.
+            base_duration = _duration(eid, simpn_params, section="gateways", default=0.0)
+            multiplier = state["_duration_overrides"].get(eid, 1.0)
+            duration = base_duration * multiplier
             state["execution_path"] = state["execution_path"] + [eid]
             if len(outgoing) <= 1:
                 chosen_flow = outgoing[0] if outgoing else None
@@ -423,12 +464,17 @@ def build_problem(
                     outgoing[0],
                 )
             state["gateway_decisions"][eid] = chosen_flow["id"] if chosen_flow else ""
-            trace_control_point(state, "GATEWAY_RESOLVED", eid, {"chosen_flow": state["gateway_decisions"][eid]})
+            trace_control_point(
+                state,
+                "GATEWAY_RESOLVED",
+                eid,
+                {"chosen_flow": state["gateway_decisions"][eid], "duration": duration},
+            )
             check_point(state, eid, "complete")
 
             result = [None] * len(outgoing)
             if chosen_flow is not None:
-                result[outgoing.index(chosen_flow)] = SimToken(state)
+                result[outgoing.index(chosen_flow)] = SimToken(state, delay=duration)
             return result
 
         return behavior, [target_place_for(f) for f in outgoing]

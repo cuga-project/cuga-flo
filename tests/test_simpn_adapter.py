@@ -11,6 +11,7 @@ Run: uv run pytest tests/test_simpn_adapter.py
 """
 
 import json
+import random
 import tempfile
 import threading
 import time
@@ -156,6 +157,37 @@ def test_native_gateway_uses_condition_without_decision_agent(mcp_bridge):
     state = _run(process, mcp_bridge, key="run-native")
     # execute_task always sets credit_score=0.8, so the "> 0.6" condition picks f2.
     assert state["execution_path"] == ["T1", "G1", "T2", "End1"]
+
+
+def test_gateway_with_no_gateways_config_resolves_instantly(mcp_bridge):
+    """A gateway's default duration is 0.0, not the task default (1.0) -- every
+    gateway before this feature existed must keep resolving instantly."""
+    engine_config = dict(_ENGINE_CONFIG, decision_gateway_ids=[])
+    process = engine.ProcessModel(_PROCESS_MODEL, engine_config)
+    mcp_bridge["hook_action"].update(action="continue")
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    _run(process, mcp_bridge, trace_sink=sink, key="run-native-no-config")
+    sink.close()
+    events = [json.loads(line) for line in open(path)]
+    resolved = next(e for e in events if e["event_type"] == "GATEWAY_RESOLVED")
+    assert resolved["payload"]["duration"] == 0.0
+
+
+def test_native_gateway_duration_is_configurable_and_traced(mcp_bridge):
+    engine_config = dict(_ENGINE_CONFIG, decision_gateway_ids=[])
+    process = engine.ProcessModel(_PROCESS_MODEL, engine_config)
+    mcp_bridge["hook_action"].update(action="continue")
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    _run(
+        process, mcp_bridge, trace_sink=sink, key="run-gateway-duration",
+        simpn_params={"gateways": {"G1": {"duration_seconds": 3.0}}},
+    )
+    sink.close()
+    events = [json.loads(line) for line in open(path)]
+    resolved = next(e for e in events if e["event_type"] == "GATEWAY_RESOLVED")
+    assert resolved["payload"]["duration"] == 3.0
 
 
 def test_native_task_with_a_formula_computes_without_any_mcp_call(mcp_bridge):
@@ -363,6 +395,115 @@ def test_decision_utility_picks_the_gateway_the_oracle_is_about():
     assert card.decision_utility == 1.0
 
 
+def test_simulated_cycle_time_sums_gateway_duration_too():
+    """GATEWAY_RESOLVED's new duration field feeds into the same aggregate as
+    ACTIVITY_COMPLETE's -- tasks and gateways together, the real "total
+    simulated BPS time" for the case."""
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="ACTIVITY_COMPLETE", bpmn_element_id="T1", payload={"duration": 2.0})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="GATEWAY_RESOLVED", bpmn_element_id="G1", payload={"chosen_flow": "f2", "duration": 0.5})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End", payload={})
+    sink.close()
+
+    run = TraceRun.load(path)
+    assert run.simulated_cycle_time_seconds() == 2.5
+
+
+def test_total_agent_duration_and_tokens_sum_across_task_gateway_and_hook():
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="cuga", event_type="AGENT_TASK_COMPLETED", bpmn_element_id="T1", payload={"duration_seconds": 1.5, "num_of_tokens": 100})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="cuga", event_type="AGENT_GATEWAY_ROUTED", bpmn_element_id="G1", payload={"duration_seconds": 0.8, "num_of_tokens": 50})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="cuga", event_type="AGENT_HOOK_EVALUATED", bpmn_element_id="H1", payload={"duration_seconds": 0.0, "num_of_tokens": 0})
+    sink.close()
+
+    run = TraceRun.load(path)
+    assert run.total_agent_duration_seconds() == pytest.approx(2.3)
+    assert run.total_agent_tokens() == 150
+
+
+def test_total_agent_duration_and_tokens_are_none_without_any_agentic_event():
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    sink.close()
+
+    run = TraceRun.load(path)
+    assert run.total_agent_duration_seconds() is None
+    assert run.total_agent_tokens() is None
+
+
+def _cost_trace() -> str:
+    """One task (priced), one gateway (unpriced — no hourly_rate for it below),
+    one agentic task completion with tokens — enough to exercise simulated_cost's
+    partial-applicability and agentic_cost's flat per-run rate in one trace."""
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="ACTIVITY_COMPLETE", bpmn_element_id="T1", payload={"duration": 3600.0})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="GATEWAY_RESOLVED", bpmn_element_id="G1", payload={"chosen_flow": "f2", "duration": 1800.0})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="cuga", event_type="AGENT_TASK_COMPLETED", bpmn_element_id="T1", payload={"duration_seconds": 1.0, "num_of_tokens": 100})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End", payload={})
+    sink.close()
+    return path
+
+
+def test_evaluate_without_rates_marks_all_three_cost_fields_not_yet_computable():
+    card = evaluate(_cost_trace())
+    assert card.simulated_cost is None
+    assert card.agentic_cost is None
+    assert card.total_cost is None
+    assert "simulated_cost" in card.not_yet_computable
+    assert "agentic_cost" in card.not_yet_computable
+    assert "total_cost" in card.not_yet_computable
+
+
+def test_evaluate_with_full_rates_computes_simulated_agentic_and_total_cost():
+    rates = {"tasks": {"T1": {"hourly_rate": 10.0}}, "model_token_cost": 0.01}
+    card = evaluate(_cost_trace(), rates=rates)
+    assert card.simulated_cost == pytest.approx(10.0)  # 3600s @ $10/hr, G1 unpriced
+    assert card.agentic_cost == pytest.approx(1.0)  # 100 tokens * $0.01
+    assert card.total_cost == pytest.approx(11.0)
+    assert not card.not_yet_computable.keys() & {"simulated_cost", "agentic_cost", "total_cost"}
+
+
+def test_evaluate_agentic_cost_is_zero_not_not_yet_computable_without_any_agentic_call():
+    """Found live running S01 under G0: no AGENT_* events ever fire under G0, so
+    total_agent_tokens() is None -- but with model_token_cost configured, that's
+    a *confirmed* zero agentic calls, not an unknown rate, so agentic_cost (and
+    therefore total_cost) must stay computable rather than blanking out the
+    report's entire cost column for every G0 run."""
+    rates = {"tasks": {"T1": {"hourly_rate": 10.0}}, "model_token_cost": 0.01}
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="ACTIVITY_COMPLETE", bpmn_element_id="T1", payload={"duration": 3600.0})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End", payload={})
+    sink.close()
+
+    card = evaluate(path, rates=rates)
+    assert card.agentic_cost == 0.0
+    assert card.total_cost == pytest.approx(10.0)
+    assert "agentic_cost" not in card.not_yet_computable
+    assert "total_cost" not in card.not_yet_computable
+
+
+def test_evaluate_with_partial_rates_leaves_unpriced_costs_not_yet_computable():
+    """Only the gateway is priced, and there's no model_token_cost -- simulated_cost
+    should still price the gateway's own duration (partial price list prices
+    whatever it can), while agentic_cost/total_cost stay not_yet_computable."""
+    rates = {"gateways": {"G1": {"hourly_rate": 20.0}}}
+    card = evaluate(_cost_trace(), rates=rates)
+    assert card.simulated_cost == pytest.approx(10.0)  # 1800s @ $20/hr
+    assert card.agentic_cost is None
+    assert card.total_cost is None
+    assert "agentic_cost" in card.not_yet_computable
+    assert "total_cost" in card.not_yet_computable
+    assert "simulated_cost" not in card.not_yet_computable
+
+
 def test_trace_run_loads_only_the_requested_run_id():
     path = tempfile.mktemp()
     sink = simpn_trace.TraceSink(path)
@@ -477,6 +618,19 @@ def test_duration_multiplier_perturbation_scales_cycle_time(process, mcp_bridge)
     assert baseline["execution_path"] == perturbed["execution_path"]  # routing unaffected
 
 
+def test_gateway_duration_multiplier_perturbation(process, mcp_bridge):
+    """The new gateways.<id>.duration_multiplier key, parallel to tasks' own
+    activities.<id> key -- both land in the same state["_duration_overrides"]
+    dict, keyed by raw element id."""
+    mcp_bridge["hook_action"].update(action="continue")
+    mcp_bridge["route_choice"]["flow"] = "f2"
+    state = _run(
+        process, mcp_bridge, key="pert-gateway-slow",
+        perturbations=[{"when": "G1.enter", "bps_change": {"gateways.G1.duration_multiplier": 4}}],
+    )
+    assert state["_duration_overrides"]["G1"] == 4
+
+
 def test_start_perturbation_sets_semantic_fact_before_first_task(process, mcp_bridge):
     mcp_bridge["hook_action"].update(action="continue")
     mcp_bridge["route_choice"]["flow"] = "f2"
@@ -518,6 +672,51 @@ def test_perturbation_fires_at_most_once(process, mcp_bridge):
         perturbations=[{"when": "T1.enter", "semantic_change": {"count": 1}}],
     )
     assert len(state["_applied_perturbations"]) == 1
+
+
+# ── Duration: flat values and distributions ─────────────────────────────────────
+
+
+def test_duration_flat_value_and_default():
+    assert engine._duration("T1", {"tasks": {"T1": {"duration_seconds": 5.0}}}) == 5.0
+    assert engine._duration("Unconfigured", {"tasks": {}}) == 1.0  # task default
+    assert engine._duration("Unconfigured", {"gateways": {}}, section="gateways", default=0.0) == 0.0
+
+
+def test_duration_distribution_samplers_are_reproducible_with_a_seed():
+    params = {"tasks": {"T1": {"duration": {"distribution": "exponential", "mean": 2.0}}}}
+    random.seed(1234)
+    first = engine._duration("T1", params)
+    random.seed(1234)
+    second = engine._duration("T1", params)
+    assert first == second
+    assert first > 0
+
+    params = {"tasks": {"T1": {"duration": {"distribution": "uniform", "low": 1.0, "high": 2.0}}}}
+    assert 1.0 <= engine._duration("T1", params) <= 2.0
+
+    params = {"tasks": {"T1": {"duration": {"distribution": "triangular", "low": 1.0, "mode": 1.5, "high": 2.0}}}}
+    assert 1.0 <= engine._duration("T1", params) <= 2.0
+
+
+def test_duration_normal_distribution_is_clipped_at_zero():
+    # mean far below zero relative to stddev -- virtually every sample would be
+    # negative without the clip.
+    params = {"tasks": {"T1": {"duration": {"distribution": "normal", "mean": -100.0, "stddev": 1.0}}}}
+    for _ in range(20):
+        assert engine._duration("T1", params) == 0.0
+
+
+def test_duration_flat_and_distribution_both_set_raises():
+    params = {"tasks": {"T1": {"duration_seconds": 1.0, "duration": {"distribution": "uniform", "low": 1, "high": 2}}}}
+    with pytest.raises(ValueError, match="not both"):
+        engine._duration("T1", params)
+
+
+def test_duration_unknown_distribution_raises():
+    params = {"tasks": {"T1": {"duration": {"distribution": "nonexistent"}}}}
+    with pytest.raises(ValueError, match="unknown distribution"):
+        engine._duration("T1", params)
 
 
 # ── Scenario schema / runner ─────────────────────────────────────────────────────

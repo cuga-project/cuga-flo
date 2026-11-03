@@ -110,20 +110,47 @@ class TraceRun:
         return max(ends) - min(starts)
 
     def simulated_cycle_time_seconds(self) -> float | None:
-        """The BPS-simulated process duration — the sum of every `ACTIVITY_COMPLETE`
-        event's own `duration` (engine.py's make_task_behavior, in simulated
-        seconds per simpn_parameters.yaml, not wall-clock). Gateways and hooks are
-        instantaneous in this model (no `duration` in their payload), and the
-        execution path here is always serial (no true parallel-gateway join — see
-        engine.py's module docstring), so a plain sum is correct. None, not 0.0,
-        when the run never completed a single activity — the two are different
-        facts."""
+        """The BPS-simulated process duration — the sum of every
+        `ACTIVITY_COMPLETE`/`GATEWAY_RESOLVED` event's own `duration` (engine.py's
+        make_task_behavior/make_gateway_behavior, in simulated seconds per
+        simpn_parameters.yaml, not wall-clock). Hooks are still instantaneous in
+        this model (no `duration` in their payload), and the execution path here
+        is always serial (no true parallel-gateway join — see engine.py's module
+        docstring), so a plain sum is correct. None, not 0.0, when the run never
+        completed a single activity/gateway — the two are different facts."""
         durations = [
             e["payload"]["duration"]
             for e in self.events
-            if e["event_type"] == "ACTIVITY_COMPLETE" and "duration" in e["payload"]
+            if e["event_type"] in ("ACTIVITY_COMPLETE", "GATEWAY_RESOLVED") and "duration" in e["payload"]
         ]
         return sum(durations) if durations else None
+
+    def total_agent_duration_seconds(self) -> float | None:
+        """Sum of every agentic call's own real wall-clock `duration_seconds`
+        (task, gateway, and hook invocations — see flow_agent.py's
+        `_handle_task`/`_handle_gateway`/`_handle_hook`). Distinct from
+        `cycle_time_seconds` (the *whole run's* wall-clock time): this is just
+        the portion of it actually spent waiting on real LLM calls, not
+        scheduling/transport overhead around them. None, not 0.0, when no
+        agentic event fired at all (e.g. a pure G0 run)."""
+        durations = [
+            e["payload"]["duration_seconds"]
+            for e in self.events
+            if e["event_type"] in ("AGENT_TASK_COMPLETED", "AGENT_GATEWAY_ROUTED", "AGENT_HOOK_EVALUATED")
+            and "duration_seconds" in e["payload"]
+        ]
+        return sum(durations) if durations else None
+
+    def total_agent_tokens(self) -> int | None:
+        """Sum of every agentic call's own `num_of_tokens` (task, gateway, and
+        hook invocations). None, not 0, when no agentic event fired at all."""
+        counts = [
+            e["payload"]["num_of_tokens"]
+            for e in self.events
+            if e["event_type"] in ("AGENT_TASK_COMPLETED", "AGENT_GATEWAY_ROUTED", "AGENT_HOOK_EVALUATED")
+            and "num_of_tokens" in e["payload"]
+        ]
+        return sum(counts) if counts else None
 
     def agent_task_count(self) -> int:
         return sum(1 for e in self.events if e["event_type"] == "AGENT_TASK_COMPLETED")

@@ -5,12 +5,25 @@
 # distributions yet (see engine.py's module docstring: one DecProblem per instance,
 # so cross-case resource contention isn't modeled). Fixed seconds, not a distribution,
 # keeps this app's trace deterministic enough to assert against in tests.
+#
+# hourly_rate ($/hour of simulated duration) and model_token_cost ($/token) are read
+# by the evaluator (cuga_flo.evaluation.metrics), not the Simulation Runtime Service
+# itself — see CUGA_FLO_SimPN_Time_And_Cost_Measurement_Plan.md Part 2. Illustrative
+# figures, not sourced from any real loan-ops benchmark.
 tasks:
   Activity_0oydey5:  # check credit (task_agent — this is on top of agent latency)
     duration_seconds: 2
+    hourly_rate: 45.0  # credit analyst
   Activity_1h9ix55:  # give loan of 1000 USD
     duration_seconds: 1
+    hourly_rate: 30.0  # disbursement clerk
   Activity_131ar38:  # send a rejection letter
     duration_seconds: 1
+    hourly_rate: 20.0  # back-office clerk
   _D63C4A69-2BD5-4836-B86D-05397C0697CB:  # inform account manager
     duration_seconds: 1
+    hourly_rate: 25.0  # back-office clerk
+gateways:
+  Gateway_09ad5fc:  # approve/reject split (decision_agent on G2/G3)
+    hourly_rate: 35.0  # loan officer review time
+model_token_cost: 0.000002  # $/token, illustrative blended rate

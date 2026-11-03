@@ -156,7 +156,9 @@ class ServiceHandle:
         self.process = None
 
 
-def run_repetition(config_path: str, scenario: Scenario, trace_path: str) -> Scorecard:
+def run_repetition(
+    config_path: str, scenario: Scenario, trace_path: str, rates: dict | None = None
+) -> Scorecard:
     """
     Runs one repetition — in its own subprocess, see `_worker.py`'s docstring for
     why — and evaluates its trace.
@@ -167,6 +169,12 @@ def run_repetition(config_path: str, scenario: Scenario, trace_path: str) -> Sco
     docstring), so a stale file from a previous run at the same path is removed
     first — otherwise a rerun would silently accumulate two runs' events into one
     file and TraceRun.load() would refuse to guess which one to evaluate.
+
+    `rates` is the app's own `simpn_parameters.yaml` content (same dict shape the
+    SimPN service itself loads) — `run_matrix_many` loads it once and passes it
+    through here, so cost metrics are computed automatically without a separate
+    CLI flag (unlike `cuga-flo evaluate`'s manual `--simpn-parameters`, this
+    runner already knows the app and its config).
     """
     Path(trace_path).unlink(missing_ok=True)
     env = dict(os.environ)
@@ -180,7 +188,7 @@ def run_repetition(config_path: str, scenario: Scenario, trace_path: str) -> Sco
     )
     if result.returncode != 0:
         raise RuntimeError(f"scenario repetition failed (config={config_path}):\n{result.stderr[-4000:]}")
-    return evaluate(trace_path, expected=scenario.expected_properties)
+    return evaluate(trace_path, expected=scenario.expected_properties, rates=rates)
 
 
 def run_matrix_many(
@@ -209,6 +217,9 @@ def run_matrix_many(
     os.makedirs(trace_dir, exist_ok=True)
     scenarios = [load_scenario(p) for p in scenario_paths]
 
+    simpn_params_path = app_dir / "config" / "simpn_parameters.yaml"
+    rates = yaml.safe_load(simpn_params_path.read_text(encoding="utf-8")) if simpn_params_path.exists() else None
+
     results: dict[str, dict[str, list[Scorecard]]] = {s.scenario_id: {} for s in scenarios}
     total_steps = len(configs) * len(scenarios) * repetitions
     step = 0
@@ -233,7 +244,7 @@ def run_matrix_many(
                         flush=True,
                     )
                     trace_path = trace_path_for(trace_dir, scenario.scenario_id, config, rep)
-                    card = run_repetition(str(config_path), scenario, trace_path)
+                    card = run_repetition(str(config_path), scenario, trace_path, rates=rates)
                     scorecards.append(card)
                     cycle = f"{card.cycle_time_seconds:.1f}s" if card.cycle_time_seconds is not None else "?"
                     print(f"done (goal={card.goal_achieved}, {cycle})", flush=True)

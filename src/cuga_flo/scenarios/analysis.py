@@ -140,6 +140,8 @@ class ConfigAggregate:
     mean_decision_utility: float | None
     mean_intervention_f1: float | None
     mean_cycle_time_seconds: float | None
+    mean_total_cost: float | None
+    mean_agent_duration_s: float | None
 
 
 def aggregate(results: dict[str, list[Scorecard]]) -> list[ConfigAggregate]:
@@ -158,17 +160,23 @@ def aggregate(results: dict[str, list[Scorecard]]) -> list[ConfigAggregate]:
                 mean_decision_utility=_mean([c.decision_utility for c in cards]),
                 mean_intervention_f1=_mean([c.intervention_f1 for c in cards]),
                 mean_cycle_time_seconds=_mean([c.cycle_time_seconds for c in cards]),
+                mean_total_cost=_mean([c.total_cost for c in cards]),
+                mean_agent_duration_s=_mean([c.total_agent_duration_seconds for c in cards]),
             )
         )
     return aggregates
 
 
 def format_aggregates(aggregates: list[ConfigAggregate]) -> str:
-    lines = [f"{'config':<6} {'n':<4} {'GAR':<6} {'mean_util':<10} {'mean_interv_f1':<15} {'mean_cycle_s':<12}"]
+    lines = [
+        f"{'config':<6} {'n':<4} {'GAR':<6} {'mean_util':<10} {'mean_interv_f1':<15} "
+        f"{'mean_cycle_s':<12} {'mean_cost':<10} {'mean_agent_s':<12}"
+    ]
     for a in aggregates:
         lines.append(
             f"{a.config:<6} {a.n:<4} {_fmt(a.goal_achievement_rate):<6} {_fmt(a.mean_decision_utility):<10} "
-            f"{_fmt(a.mean_intervention_f1):<15} {_fmt(a.mean_cycle_time_seconds):<12}"
+            f"{_fmt(a.mean_intervention_f1):<15} {_fmt(a.mean_cycle_time_seconds):<12} "
+            f"{_fmt(a.mean_total_cost):<10} {_fmt(a.mean_agent_duration_s):<12}"
         )
     return "\n".join(lines)
 
@@ -235,6 +243,38 @@ _GLOSSARY: dict[str, str] = {
     "mean_util": "Mean `decision_utility` across this config's repetitions.",
     "mean_interv_f1": "Mean `intervention_f1` across this config's repetitions.",
     "mean_cycle_s": "Mean wall-clock `cycle_time_seconds` across this config's repetitions.",
+    "mean_cost (mean_total_cost)": (
+        "Mean `total_cost` (`simulated_cost` + `agentic_cost`) across this "
+        "config's repetitions. `-` if the app's `simpn_parameters.yaml` has no "
+        "`hourly_rate`/`model_token_cost` configured, or every run's cost was "
+        "itself `not_yet_computable`."
+    ),
+    "mean_agent_s (mean_agent_duration_s)": (
+        "Mean `total_agent_duration_seconds` — real wall-clock time spent inside "
+        "agentic task/gateway/hook calls, summed per run then averaged across "
+        "this config's repetitions. Near-zero for G0 (no agentic calls)."
+    ),
+    "duration (GATEWAY_RESOLVED payload)": (
+        "The simulated seconds SimPN's native gateway resolution took — mirrors "
+        "ACTIVITY_COMPLETE's own `duration`, and feeds the same "
+        "`simulated_cycle_time_seconds`/`simulated_cost` aggregates."
+    ),
+    "num_of_tokens": (
+        "Token count consumed by one agentic task/gateway/hook invocation "
+        "(from `ActivityTracker.token_usage`'s before/after delta), the raw "
+        "fact `agentic_cost` multiplies by `model_token_cost`."
+    ),
+    "simulated_cost": (
+        "`(duration / 3600) * hourly_rate`, summed across every priced task/"
+        "gateway in the run. `-` without a `hourly_rate` for anything the run "
+        "actually touched."
+    ),
+    "agentic_cost": (
+        "`total_agent_tokens() * model_token_cost`. `0.0` (not `-`) for a run "
+        "that made no agentic call at all (e.g. G0) — a confirmed zero, not a "
+        "missing one. `-` only if `model_token_cost` itself isn't configured."
+    ),
+    "total_cost": "`simulated_cost + agentic_cost`. `-` if either side is `-`.",
     "ΔGAR (ablation)": (
         "The change in Goal Achievement Rate between two autonomy configs "
         "(e.g. `G1 -> G2`), isolating that specific autonomy layer's "
@@ -313,14 +353,15 @@ def write_report(
             "",
             "**Per-config aggregates**",
             "",
-            "| config | n | GAR | mean_util | mean_interv_f1 | mean_cycle_s |",
-            "|---|---|---|---|---|---|",
+            "| config | n | GAR | mean_util | mean_interv_f1 | mean_cycle_s | mean_cost | mean_agent_s |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         for a in aggs:
             lines.append(
                 f"| {a.config} | {a.n} | {_fmt(a.goal_achievement_rate)} | "
                 f"{_fmt(a.mean_decision_utility)} | {_fmt(a.mean_intervention_f1)} | "
-                f"{_fmt(a.mean_cycle_time_seconds)} |"
+                f"{_fmt(a.mean_cycle_time_seconds)} | {_fmt(a.mean_total_cost)} | "
+                f"{_fmt(a.mean_agent_duration_s)} |"
             )
 
         lines += ["", "**Ablation (ΔGAR — Goal Achievement Rate)**", ""]

@@ -21,6 +21,7 @@ FlowAgent contributes:
 """
 
 import json
+import time
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from loguru import logger
@@ -159,10 +160,24 @@ class FlowAgent:
                 data=f"vars={visible}",
             )
         )
+        start = time.monotonic()
+        tokens_before = tracker.token_usage
         result = await agent.execute(ctx.current_state, task_input)
+        duration_seconds = time.monotonic() - start
+        num_of_tokens = tracker.token_usage - tokens_before
         output = result.get("output", result.get("error", ""))
         tracker.collect_step(Step(name=ctx.element_name or task_id, data=str(output)))
-        _trace(ctx, "AGENT_TASK_COMPLETED", task_id, {"status": result.get("status"), "success": result.get("success")})
+        _trace(
+            ctx,
+            "AGENT_TASK_COMPLETED",
+            task_id,
+            {
+                "status": result.get("status"),
+                "success": result.get("success"),
+                "duration_seconds": duration_seconds,
+                "num_of_tokens": num_of_tokens,
+            },
+        )
         return {
             "execution_path": [task_id],
             "process_variables": ctx.current_state.process_variables,
@@ -176,7 +191,11 @@ class FlowAgent:
         if agent is None:
             return flows[0].id if flows else ""
         try:
+            start = time.monotonic()
+            tokens_before = tracker.token_usage
             flow_id, reason = await agent.route(flows, ctx.current_state)
+            duration_seconds = time.monotonic() - start
+            num_of_tokens = tracker.token_usage - tokens_before
             self._gateway_decisions[gateway_id] = (flow_id, reason)
             tracker.collect_step(
                 Step(
@@ -184,7 +203,17 @@ class FlowAgent:
                     data=f"Routed to flow: {flow_id}" + (f" — {reason}" if reason else ""),
                 )
             )
-            _trace(ctx, "AGENT_GATEWAY_ROUTED", gateway_id, {"flow_id": flow_id, "reason": reason})
+            _trace(
+                ctx,
+                "AGENT_GATEWAY_ROUTED",
+                gateway_id,
+                {
+                    "flow_id": flow_id,
+                    "reason": reason,
+                    "duration_seconds": duration_seconds,
+                    "num_of_tokens": num_of_tokens,
+                },
+            )
             return flow_id
         except Exception as e:
             logger.error(f"  DecisionAgent error for {gateway_id}: {e}")
@@ -201,8 +230,18 @@ class FlowAgent:
                 )
             )
             return result
+        # Only the policy branch is a real LLM call -- hook.handler is a plain
+        # Python callback and the default is no call at all, so both stay at
+        # duration_seconds=0.0/num_of_tokens=0 rather than a misleading nonzero
+        # "cost" for work that never touched a model.
+        duration_seconds = 0.0
+        num_of_tokens = 0
         if hook.policy:
+            start = time.monotonic()
+            tokens_before = tracker.token_usage
             result = await self._llm_hook_decision(hook, ctx)
+            duration_seconds = time.monotonic() - start
+            num_of_tokens = tracker.token_usage - tokens_before
         elif hook.handler:
             result = hook.handler(ctx.current_state)
         else:
@@ -213,7 +252,17 @@ class FlowAgent:
                 data=result.message or result.action.value,
             )
         )
-        _trace(ctx, "AGENT_HOOK_EVALUATED", hook.id, {"action": result.action.value, "message": result.message})
+        _trace(
+            ctx,
+            "AGENT_HOOK_EVALUATED",
+            hook.id,
+            {
+                "action": result.action.value,
+                "message": result.message,
+                "duration_seconds": duration_seconds,
+                "num_of_tokens": num_of_tokens,
+            },
+        )
         return result
 
     # ──────────────────────────────────────────────────────────────

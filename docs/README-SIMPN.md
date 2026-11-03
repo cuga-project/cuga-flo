@@ -66,7 +66,9 @@ same semantics as Kogito's `POST /{processId}` for an automated process. Config 
 
 - **`engine.py`** — builds one `simpn.simulator.DecProblem` per simulated instance
   from `process_model.json` (a dumped `BPMNProcess`) + `engine_config.json` (a dumped
-  `FlowConfig.to_engine_config()`) + `simpn_parameters.yaml` (BPS durations). One
+  `FlowConfig.to_engine_config()`) + `simpn_parameters.yaml` (BPS durations,
+  `hourly_rate`s, `model_token_cost` — see "Durations, hourly rates, and token
+  cost" below). One
   `SimVar` place per BPMN element; a task/gateway/hook's event consumes its place's
   token and, via its `behavior`, calls the matching MCP tool
   (`execute_task`/`route_gateway`/`evaluate_hook`) when the element is agentic, or
@@ -157,6 +159,34 @@ payment history matched the substring `"default"` inside the phrase
 positive phrases first, with a regression test
 (`tests/test_loan_approval_simpn_formulas.py::test_does_not_misread_a_negated_keyword`).
 
+### Durations, hourly rates, and token cost
+
+A `tasks.<id>`/`gateways.<id>` entry in `simpn_parameters.yaml` takes a flat
+`duration_seconds`, **or** a `duration:` block sampling from one of four
+stdlib-only distributions (`random.expovariate`/`gauss`/`triangular`/
+`uniform`) — never both:
+
+```yaml
+tasks:
+  Activity_0oydey5:
+    duration:
+      distribution: exponential   # or: normal, triangular, uniform
+      mean: 2                     # normal: mean/stddev; triangular: low/high/mode; uniform: low/high
+    hourly_rate: 45.0              # $/hour of simulated duration — read by the evaluator, not this engine
+gateways:
+  Gateway_09ad5fc:
+    hourly_rate: 35.0
+model_token_cost: 0.000002         # $/token, one flat rate for the whole run
+```
+
+`hourly_rate`/`model_token_cost` have **no effect on the simulation itself** —
+`engine.py` never reads them. They exist purely for the evaluator
+(`cuga_flo.evaluation.metrics`) to turn the trace's raw `duration`/
+`num_of_tokens` facts into `simulated_cost`/`agentic_cost`/`total_cost`; see
+[Deterministic evaluator](#deterministic-evaluator) below. A gateway's
+`duration` defaults to `0.0` when unconfigured (instantaneous, preserving
+every existing app's current behavior), unlike a task's `1.0`-second default.
+
 ### The full `HookAction` vocabulary, one mechanism
 
 No graph mutation. A hook's event pre-declares **every** admissible outgoing arc (the
@@ -204,16 +234,20 @@ cuga-flo evaluate /tmp/run1.jsonl --expected applications/loan_approval_simpn/co
 
 ## Deterministic evaluator
 
-`cuga-flo evaluate <trace.jsonl> [--expected <properties.yaml>]` prints a JSON
-scorecard. Trace-native and policy/governance metrics (activity/agent/
-hook counts, `policy_compliant`) are always computed; two distinct cycle times
-are both always computed too — `cycle_time_seconds` is real wall-clock time
-(near-zero for a non-agentic config, since SimPN's discrete-event engine
-advances its clock logically rather than sleeping out a task's configured
-duration), `simulated_cycle_time_seconds` is the BPS-simulated process
-duration instead (the sum of each activity's own `duration`, from
-`simpn_parameters.yaml` — see `TraceRun.simulated_cycle_time_seconds`'s
-docstring). `goal_achieved`,
+`cuga-flo evaluate <trace.jsonl> [--expected <properties.yaml>] [--simpn-parameters
+<simpn_parameters.yaml>]` prints a JSON scorecard. Trace-native and policy/
+governance metrics (activity/agent/hook counts, `policy_compliant`) are always
+computed; two distinct cycle times are both always computed too —
+`cycle_time_seconds` is real wall-clock time (near-zero for a non-agentic
+config, since SimPN's discrete-event engine advances its clock logically
+rather than sleeping out a task's configured duration), `simulated_cycle_time_
+seconds` is the BPS-simulated process duration instead (the sum of each task's
+AND each gateway's own `duration`, from `simpn_parameters.yaml` — see
+`TraceRun.simulated_cycle_time_seconds`'s docstring). `total_agent_duration_
+seconds` sums the real wall-clock time spent inside every agentic task/
+gateway/hook call specifically (`AGENT_TASK_COMPLETED`/`AGENT_GATEWAY_ROUTED`/
+`AGENT_HOOK_EVALUATED`'s own `duration_seconds`), `None` if the run made no
+agentic call at all (e.g. G0). `goal_achieved`,
 `decision_utility`, and `intervention_{precision,recall,f1}` need an
 `expected_properties` file (design doc §6.3 — `eventually`/`must`/`must_not`/
 `acceptable_routes`/`intervention.required_after`, predicates named either from a
@@ -225,6 +259,19 @@ nobody said was acceptable (G0 rejecting a well-qualified applicant for lack of 
 real scoring mechanism), and without this check `goal_achieved` would report success
 on exactly that failure. `perturbation_recovered` is always `not_yet_computable`: it
 needs multiple runs (perturbed vs. nominal) to compare, not just one to judge.
+
+**Cost — needs `--simpn-parameters`, a separate input from `--expected`.**
+`simulated_cost` sums `(duration / 3600) * hourly_rate` across every priced
+task/gateway the run actually touched — `None` only if nothing in the run had
+a configured `hourly_rate` (a partial price list still prices whatever it
+can). `agentic_cost` is `total_agent_tokens() * model_token_cost` — `None`
+only if `model_token_cost` itself isn't configured; a run with zero agentic
+calls (G0) gets a confirmed `0.0`, not `None`, since "zero calls happened" is
+observed fact, not missing data — this is what keeps `total_cost`
+(`simulated_cost + agentic_cost`) computable for G0 from `simulated_cost`
+alone. `cuga_flo.scenarios.runner` passes the app's own `simpn_parameters.yaml`
+into `evaluate()` automatically for `run-scenario` — no flag needed there,
+only for a standalone `cuga-flo evaluate` call.
 
 ---
 
@@ -266,8 +313,12 @@ or plain prose reference, nothing new the engine has to know about. This is why
 
 ### Perturbation injection — what `bps_change` can and can't do
 
-Only `activities.<element_id>.duration_multiplier` has a real effect — see
-engine.py's `check_point`/`perturbations.py`. Anything else under `bps_change` (e.g.
+Only `activities.<element_id>.duration_multiplier` (a task) and `gateways.
+<element_id>.duration_multiplier` (a gateway) have a real effect — see
+engine.py's `check_point`/`perturbations.py`. Both land in the same
+`_duration_overrides` dict; `activities.` is BPMN-speak for "task" here, kept
+distinct from `gateways.` so a scenario YAML reads unambiguously even though
+both ultimately just scale a multiplier. Anything else under `bps_change` (e.g.
 design doc §6.1's `resources.X.capacity`) is recorded as `unsupported_bps_keys` in a
 `PERTURBATION_APPLIED` trace event rather than silently applied or dropped — true
 resource-contention modeling needs the shared-`DecProblem` upgrade the "Known gaps"
@@ -360,9 +411,17 @@ of `initial_state` rather than inventing a value) fixed it in the next run.
 
 `cuga_flo.scenarios.analysis` (design doc §16) adds, on top of `run-scenario`'s
 comparison table: per-config aggregates (Goal Achievement Rate, mean decision
-utility, mean intervention F1, mean cycle time) and the G0→G1→G2→G3 ΔGAR ablation
-(§16.4) — always printed. `--csv PATH` writes one row per (scenario, config,
-repetition), §16's own comparison table plus that run's actual process input and execution
+utility, mean intervention F1, mean cycle time, mean total cost, mean agent
+duration) and the G0→G1→G2→G3 ΔGAR ablation
+(§16.4) — always printed. `mean_cost`/`mean_agent_s` read `-` the same way the
+others do when the app's `simpn_parameters.yaml` has no `hourly_rate`/
+`model_token_cost` configured at all; `run_matrix_many` loads that file once
+per app automatically, so no extra flag is needed to populate them. `--csv
+PATH` writes one row per (scenario, config, repetition), §16's own comparison
+table (every `Scorecard` field, including `simulated_cost`/`agentic_cost`/
+`total_cost`/`total_agent_duration_seconds` automatically — new `Scorecard`
+fields need no `analysis.py` change to appear here) plus that run's actual
+process input and execution
 result flattened into `input_<key>`/`output_<key>` columns (read back from the
 run's own trace via `TraceRun.initial_variables`/`final_variables` — see
 `runner.py`'s `trace_path_for` for how the CSV writer locates the right file),
@@ -408,7 +467,7 @@ An app is authored entirely under `applications/<app-name>/`:
 │   ├── <app-name>_config.yaml          workflow_engine.type: simpn — the default, single-run config
 │   ├── G0_config.yaml .. G3_config.yaml  autonomy-ladder variants — only the scenario runner uses these
 │   ├── BPMNdiagram.bpmn                the same clean model CUGA FLO itself parses
-│   ├── simpn_parameters.yaml           BPS durations — this engine's own file
+│   ├── simpn_parameters.yaml           BPS durations/rates — this engine's own file
 │   ├── formulas.py                     optional — native formula: lookups, this app's own
 │   └── expected_properties/*.yaml      oracle fixtures, one per case worth asserting on
 ├── scenarios/*.yaml                    frozen scenarios — see "Scenarios and the scenario runner" below
@@ -448,9 +507,10 @@ peer.
 - **`add_node` cannot invent a new element at runtime** — its target must already be
   modeled in the BPMN (a "pre-declared" node, per the design doc's own bounded
   vocabulary framing), not a fresh synthetic task minted on the fly.
-- **`bps_change`/`initial_state.bps` supports exactly one key shape** —
-  `activities.<id>.duration_multiplier` — for the same one-`DecProblem`-per-instance
-  reason as the first gap above. Anything else is recorded, not applied; see
+- **`bps_change`/`initial_state.bps` supports exactly two key shapes** —
+  `activities.<id>.duration_multiplier` and `gateways.<id>.duration_multiplier`
+  — for the same one-`DecProblem`-per-instance reason as the first gap above.
+  Anything else is recorded, not applied; see
   "Perturbation injection" above.
 - **One trace file per scenario repetition, not one shared file correlated by
   `run_id`.** `cuga_flo.scenarios.runner.run_repetition` removes any stale file at
