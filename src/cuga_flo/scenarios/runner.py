@@ -271,19 +271,21 @@ def run_matrix(
 
 
 def format_comparison(scenario: Scenario, results: dict[str, list[Scorecard]]) -> str:
-    """`sim_s` is simulated_cycle_time_seconds (the sum of each executed task/
-    gateway's configured duration), not wall-clock cycle_time_seconds — the
-    latter reads near-zero for any config making no agentic call at all (e.g.
-    G0), which would make this comparison table misleading across G0-G3 for
-    exactly the reason analysis.py's Scores Matrices switched to the same
-    field."""
+    """`total_s` is total_duration_seconds — simulated_cycle_time_seconds (the
+    sum of each executed task/gateway's configured duration, deliberately
+    the same regardless of config) plus total_agent_duration_seconds (the
+    real agentic overhead a config actually adds on top), mirroring
+    total_cost's simulated_cost + agentic_cost. Neither half alone
+    differentiates G0-G3 for the reason that matters here: the simulated
+    half is constant by design, and wall-clock cycle_time_seconds alone
+    reads near-zero for any config making no agentic call at all (e.g. G0)."""
     lines = [f"Scenario {scenario.scenario_id}: {scenario.description.strip()}", ""]
-    header = f"{'config':<6} {'rep':<4} {'goal':<6} {'util':<6} {'interv_f1':<10} {'sim_s':<10}"
+    header = f"{'config':<6} {'rep':<4} {'goal':<6} {'util':<6} {'interv_f1':<10} {'total_s':<10}"
     lines.append(header)
     lines.append("-" * len(header))
     for config, cards in results.items():
         for i, card in enumerate(cards):
-            cycle = f"{card.simulated_cycle_time_seconds:.1f}" if card.simulated_cycle_time_seconds is not None else "-"
+            cycle = f"{card.total_duration_seconds:.1f}" if card.total_duration_seconds is not None else "-"
             lines.append(
                 f"{config:<6} {i:<4} {str(card.goal_achieved):<6} {str(card.decision_utility):<6} "
                 f"{str(card.intervention_f1):<10} {cycle:<10}"

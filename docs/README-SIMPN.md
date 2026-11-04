@@ -247,7 +247,15 @@ AND each gateway's own `duration`, from `simpn_parameters.yaml` — see
 seconds` sums the real wall-clock time spent inside every agentic task/
 gateway/hook call specifically (`AGENT_TASK_COMPLETED`/`AGENT_GATEWAY_ROUTED`/
 `AGENT_HOOK_EVALUATED`'s own `duration_seconds`), `None` if the run made no
-agentic call at all (e.g. G0). `goal_achieved`,
+agentic call at all (e.g. G0). `total_duration_seconds` is
+`simulated_cycle_time_seconds + total_agent_duration_seconds` (treating the
+latter as a confirmed `0.0`, not missing, when `None`) — the one figure that
+actually differentiates G0-G3, since `simulated_cycle_time_seconds` alone is
+deliberately the same regardless of which config executes a task/gateway
+(it's a property of the activity, not of who performs it) and
+`cycle_time_seconds` alone reads near-zero for any config with no agentic
+call at all; mirrors `total_cost`'s own `simulated_cost + agentic_cost`.
+`goal_achieved`,
 `decision_utility`, and `intervention_{precision,recall,f1}` need an
 `expected_properties` file (design doc §6.3 — `eventually`/`must`/`must_not`/
 `acceptable_routes`/`intervention.required_after`, predicates named either from a
@@ -356,9 +364,11 @@ interactive run. Prints a progress line per `(config, scenario, repetition)`
 as it runs (`[G1] building and starting the SimPN service...`, then
 `[3/12] S04 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)`, real wall-clock
 time — a progress heartbeat, not an analysis metric), then a
-`goal`/`util`/`interv_f1`/`sim_s` comparison table across configs (`sim_s` is
-the BPS-simulated process time, not wall-clock — see "Deterministic
-evaluator" above for why wall-clock alone would be misleading across G0-G3).
+`goal`/`util`/`interv_f1`/`total_s` comparison table across configs (`total_s`
+is total_duration_seconds: simulated process time plus the real agentic
+overhead a config adds on top, mirroring total_cost — see "Deterministic
+evaluator" above for why neither wall-clock alone nor simulated time alone
+would differentiate G0-G3 meaningfully).
 `loan_approval_simpn/scenarios/S04-regulatory-restriction.yaml`,
 `S05-slow-credit-check.yaml`, and `S02-unverifiable-id.yaml` all differentiate
 G-levels via **oversight** autonomy, through a different hook rule each (see
@@ -414,8 +424,9 @@ of `initial_state` rather than inventing a value) fixed it in the next run.
 
 `cuga_flo.scenarios.analysis` (design doc §16) adds, on top of `run-scenario`'s
 comparison table: per-config aggregates (Goal Achievement Rate, mean decision
-utility, mean intervention F1, mean cycle time, mean total cost, mean agent
-duration) and the G0→G1→G2→G3 ΔGAR ablation
+utility, mean intervention F1, mean total process time (`mean_total_s` —
+simulated + agentic duration combined, mirroring mean total cost), mean total
+cost, mean agent duration) and the G0→G1→G2→G3 ΔGAR ablation
 (§16.4) — always printed. `mean_cost`/`mean_agent_s` read `-` the same way the
 others do when the app's `simpn_parameters.yaml` has no `hourly_rate`/
 `model_token_cost` configured at all; `run_matrix_many` loads that file once
@@ -437,7 +448,7 @@ execution path reached it at all, ready to load into pandas/R/statsmodels.
 with the scenarios/configs/repetitions run, each scenario's comparison/aggregate/
 ablation as markdown tables, and three **Scenario × Configuration matrices**
 (one row per scenario, one column per config): Goal Achievement Rate, mean
-cycle time, and mean total cost. The GAR one mirrors the "Scenario Type" ×
+total process time, and mean total cost. The GAR one mirrors the "Scenario Type" ×
 G0-G3 scorecard on slide 23 of
 `CUGA_FLO_Prosimos_Executive_Integration_extended.pptx` — same shape, but every
 cell is a real measured result, not that slide's illustrative hypothetical

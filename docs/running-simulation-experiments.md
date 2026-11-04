@@ -358,8 +358,8 @@ form above is unchanged and still the right tool when you only want one.
 invocation — which scenarios and configs were run, each scenario's
 comparison/aggregate/ablation (as proper markdown tables, not the terminal's
 plain-text ones), and three **Scenario × Configuration matrices** — Goal
-Achievement Rate, mean cycle time, and mean total cost — each one row per
-scenario and one column per config tested:
+Achievement Rate, mean total process time, and mean total cost — each one
+row per scenario and one column per config tested:
 
 ```bash
 cuga-flo run-scenario loan_approval_simpn \
@@ -414,6 +414,7 @@ reads one trace and prints a JSON **scorecard**:
   "cycle_time_seconds": 17.5,
   "simulated_cycle_time_seconds": 4.0,
   "total_agent_duration_seconds": 3.2,
+  "total_duration_seconds": 7.2,
   "activity_count": 6,
   "agent_task_invocations": 1,
   "agent_gateway_invocations": 1,
@@ -446,18 +447,25 @@ all — `total_cost` stays computable from `simulated_cost` alone in that case).
 deliberately refuses to guess at rather than silently reporting a wrong number —
 check that dict before trusting a metric's absence means "zero."
 
-**Two different cycle times, easy to confuse.** `cycle_time_seconds` is real,
-measured **wall-clock** time — how long this machine actually took to run the
-case. `simulated_cycle_time_seconds` is the **BPS-simulated** process
+**Three different time figures, easy to confuse.** `cycle_time_seconds` is
+real, measured **wall-clock** time — how long this machine actually took to
+run the case. `simulated_cycle_time_seconds` is the **BPS-simulated** process
 duration — the sum of every activity's configured duration (from
-`simpn_parameters.yaml`), the number that actually represents how long the
-*modeled* process takes. For G0 (no agentic calls), SimPN's discrete-event
-engine advances its internal clock logically rather than sleeping out a
-task's duration, so `cycle_time_seconds` is near-zero regardless of what the
-process is meant to represent — `simulated_cycle_time_seconds` is the one to
-read for that. For G1-G3, `cycle_time_seconds` instead reflects genuine LLM
-latency, which the simulated figure deliberately doesn't capture (an LLM call
-isn't a BPS-modeled duration at all).
+`simpn_parameters.yaml`) — deliberately the *same number regardless of
+config*, since it's a property of the activity, not of who performs it. For
+G0 (no agentic calls), SimPN's discrete-event engine advances its internal
+clock logically rather than sleeping out a task's duration, so
+`cycle_time_seconds` is near-zero while `simulated_cycle_time_seconds` still
+reads the modeled duration; for G1-G3, `cycle_time_seconds` instead reflects
+genuine (and growing) LLM latency, which the simulated figure deliberately
+doesn't capture.
+
+Because of that, **neither figure alone differentiates G0 from G1-G3** —
+`total_duration_seconds` (`simulated_cycle_time_seconds +
+total_agent_duration_seconds`, mirroring `total_cost`) is the one that does,
+and the one §6/§7's comparison tables and `--report`'s matrix actually print.
+It reads as "the modeled process time, plus whatever extra real time this
+config's agentic calls added on top of it."
 
 ### Comparative analysis across the matrix
 
@@ -519,18 +527,18 @@ and ablation views are computed from that same real data (shown together here, a
 `run-scenario` now prints all three in one pass):
 
 ```
-config rep  goal   util   interv_f1  sim_s
+config rep  goal   util   interv_f1  total_s
 -----------------------------------------------
 G0     0    False  1.0    0.0        4.0
-G1     0    False  1.0    0.0        4.0
-G2     0    False  1.0    0.0        4.0
-G3     0    True   1.0    1.0        4.0
+G1     0    False  1.0    0.0        9.9
+G2     0    False  1.0    0.0        12.5
+G3     0    True   1.0    1.0        11.2
 
-config n    GAR    mean_util  mean_interv_f1  mean_sim_s   mean_cost  mean_agent_s
-G0     1    0.00   1.00       0.00            4.00         0.04       -
-G1     1    0.00   1.00       0.00            4.00         0.05       7.84
-G2     1    0.00   1.00       0.00            4.00         0.07       3.27
-G3     1    1.00   1.00       1.00            4.00         0.09       7.33
+config n    GAR    mean_util  mean_interv_f1  mean_total_s  mean_cost  mean_agent_s
+G0     1    0.00   1.00       0.00            4.00          0.04       -
+G1     1    0.00   1.00       0.00            9.94          0.05       5.94
+G2     1    0.00   1.00       0.00            12.45         0.07       8.45
+G3     1    1.00   1.00       1.00            11.24         0.09       7.24
 
 Ablation (ΔGAR — Goal Achievement Rate):
   G0 -> G1: +0.00
@@ -539,11 +547,15 @@ Ablation (ΔGAR — Goal Achievement Rate):
   G0 -> G3: +1.00
 ```
 
-`sim_s`/`mean_sim_s` is the BPS-simulated process time, not wall-clock —
-constant here across G0-G3 because every config takes the same path through
-the same task durations in `simpn_parameters.yaml` (see §6's "Two different
-cycle times" note for why wall-clock would instead jump around: G0 near-zero,
-G1-G3 reflecting real, variable LLM latency). `mean_cost`/`mean_agent_s`
+`total_s`/`mean_total_s` is `total_duration_seconds`: simulated process time
+(constant across G0-G3 here, since every config takes the same path through
+the same task durations in `simpn_parameters.yaml`) *plus* the real agentic
+overhead that config's calls actually add on top — mirroring `total_cost`'s
+own `simulated_cost + agentic_cost`. Neither half alone would show this
+climb: `simulated_cycle_time_seconds` is deliberately the same number
+regardless of config, and plain wall-clock `cycle_time_seconds` reads
+near-zero for G0 specifically (see §6's "Two different cycle times" note).
+`mean_cost`/`mean_agent_s`
 (illustrative `hourly_rate`/`model_token_cost` figures) climb step by step as
 each layer of autonomy adds its own agentic calls on top of the same native
 cost floor.
@@ -594,8 +606,8 @@ confidence interval, a plot across more scenarios, or
 everything above — no terminal, no CSV, no pandas needed to see the shape of
 a result. It opens with which scenarios and configs were actually run, then
 every scenario's comparison/aggregate/ablation as proper markdown tables, and
-closes with three Scenario × Configuration matrices — GAR, mean cycle time,
-mean total cost: scan down a column to
+closes with three Scenario × Configuration matrices — GAR, mean total process
+time, mean total cost: scan down a column to
 see one config's performance (and its time/cost) across every scenario, or
 across a row to see how one scenario's outcome, latency, and spend all shift
 as autonomy increases — exactly the

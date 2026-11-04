@@ -140,7 +140,7 @@ class ConfigAggregate:
     mean_decision_utility: float | None
     mean_intervention_f1: float | None
     mean_cycle_time_seconds: float | None
-    mean_simulated_cycle_time_seconds: float | None
+    mean_total_duration_seconds: float | None
     mean_total_cost: float | None
     mean_agent_duration_s: float | None
 
@@ -161,7 +161,7 @@ def aggregate(results: dict[str, list[Scorecard]]) -> list[ConfigAggregate]:
                 mean_decision_utility=_mean([c.decision_utility for c in cards]),
                 mean_intervention_f1=_mean([c.intervention_f1 for c in cards]),
                 mean_cycle_time_seconds=_mean([c.cycle_time_seconds for c in cards]),
-                mean_simulated_cycle_time_seconds=_mean([c.simulated_cycle_time_seconds for c in cards]),
+                mean_total_duration_seconds=_mean([c.total_duration_seconds for c in cards]),
                 mean_total_cost=_mean([c.total_cost for c in cards]),
                 mean_agent_duration_s=_mean([c.total_agent_duration_seconds for c in cards]),
             )
@@ -170,16 +170,19 @@ def aggregate(results: dict[str, list[Scorecard]]) -> list[ConfigAggregate]:
 
 
 def format_aggregates(aggregates: list[ConfigAggregate]) -> str:
-    """`mean_sim_s` is mean_simulated_cycle_time_seconds, not wall-clock
-    mean_cycle_time_seconds — see format_comparison's docstring for why."""
+    """`mean_total_s` is mean_total_duration_seconds (simulated + agentic,
+    mirroring mean_cost's simulated_cost + agentic_cost), not wall-clock
+    mean_cycle_time_seconds — see format_comparison's docstring for why.
+    `mean_agent_s` is shown alongside it as the granular "how much of that
+    total is agent overhead" breakdown."""
     lines = [
         f"{'config':<6} {'n':<4} {'GAR':<6} {'mean_util':<10} {'mean_interv_f1':<15} "
-        f"{'mean_sim_s':<12} {'mean_cost':<10} {'mean_agent_s':<12}"
+        f"{'mean_total_s':<13} {'mean_cost':<10} {'mean_agent_s':<12}"
     ]
     for a in aggregates:
         lines.append(
             f"{a.config:<6} {a.n:<4} {_fmt(a.goal_achievement_rate):<6} {_fmt(a.mean_decision_utility):<10} "
-            f"{_fmt(a.mean_intervention_f1):<15} {_fmt(a.mean_simulated_cycle_time_seconds):<12} "
+            f"{_fmt(a.mean_intervention_f1):<15} {_fmt(a.mean_total_duration_seconds):<13} "
             f"{_fmt(a.mean_total_cost):<10} {_fmt(a.mean_agent_duration_s):<12}"
         )
     return "\n".join(lines)
@@ -286,13 +289,12 @@ _GLOSSARY: dict[str, str] = {
     ),
     "Scores Matrices": (
         "Three Scenario × Configuration tables — Goal Achievement Rate (same "
-        "as GAR above, as a rounded percentage), mean *simulated* process "
-        "time (sum of each executed task/gateway's configured duration from "
-        "simpn_parameters.yaml — not mean_cycle_s's real wall-clock seconds, "
-        "which reads near-zero for a config with no agentic call at all, "
-        "e.g. G0, regardless of configured durations; see "
-        "simulated_cycle_time_seconds above), and mean total "
-        "cost (same as mean_cost above) — one cell per (scenario, config) pair."
+        "as GAR above, as a rounded percentage), mean total process time "
+        "(same as mean_total_s above: simulated + agentic duration combined "
+        "— not mean_cycle_s's real wall-clock seconds, which reads "
+        "near-zero for a config with no agentic call at all, e.g. G0, "
+        "regardless of configured durations), and mean total cost (same as "
+        "mean_cost above) — one cell per (scenario, config) pair."
     ),
 }
 
@@ -309,11 +311,13 @@ def write_report(
     folder mode): which scenarios/configs/repetitions were run, each scenario's
     comparison/aggregate/ablation (same numbers runner.format_comparison/
     format_aggregates/format_ablation print, as markdown tables here), three
-    Scenario x Configuration matrices (Goal Achievement Rate, mean *simulated*
-    process time, mean total cost — the simulated time, not wall-clock
-    cycle_time_seconds, since a config with no agentic call at all (e.g. G0)
-    reads near-zero wall-clock time regardless of configured durations, see
-    simulated_cycle_time_seconds's own docstring) — the GAR one is the same
+    Scenario x Configuration matrices (Goal Achievement Rate, mean total
+    process time, mean total cost — total process time is simulated +
+    agentic duration combined, mirroring total_cost's own simulated_cost +
+    agentic_cost, since simulated_cycle_time_seconds alone is deliberately
+    the same regardless of config and wall-clock cycle_time_seconds alone
+    reads near-zero for a config with no agentic call at all, e.g. G0; see
+    _total_duration_seconds's docstring in metrics.py) — the GAR one is the same
     shape as the executive deck's
     "Scenario Type" x G0-G3 scorecard
     (CUGA_FLO_Prosimos_Executive_Integration_extended.pptx, slide 23), except
@@ -394,7 +398,7 @@ def write_report(
     aggs_by_scenario = {s.scenario_id: {a.config: a for a in aggregate(multi_results[s.scenario_id])} for s in scenarios}
     matrices = [
         ("Goal Achievement Rate", lambda a: _pct(a.goal_achievement_rate)),
-        ("Mean Simulated Process Time (s)", lambda a: _fmt(a.mean_simulated_cycle_time_seconds)),
+        ("Mean Total Process Time (s)", lambda a: _fmt(a.mean_total_duration_seconds)),
         ("Mean Total Cost ($)", lambda a: _fmt(a.mean_total_cost)),
     ]
     lines += ["", "## Scores Matrices — by Scenario × Configuration"]

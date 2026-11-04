@@ -435,6 +435,55 @@ def test_total_agent_duration_and_tokens_are_none_without_any_agentic_event():
     assert run.total_agent_tokens() is None
 
 
+def test_evaluate_total_duration_combines_simulated_and_agentic_time():
+    """total_duration_seconds mirrors total_cost: simulated_cycle_time_seconds
+    (constant regardless of config) plus total_agent_duration_seconds (the
+    real overhead a config's agentic calls add). Found live: the Scores
+    Matrix's "simulated only" time column showed nearly identical values
+    across G0-G3, which is correct for the simulated half alone but hides
+    the whole point of comparing autonomy levels -- this is the fix."""
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="ACTIVITY_COMPLETE", bpmn_element_id="T1", payload={"duration": 4.0})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="cuga", event_type="AGENT_TASK_COMPLETED", bpmn_element_id="T1", payload={"duration_seconds": 2.5, "num_of_tokens": 10})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End", payload={})
+    sink.close()
+
+    card = evaluate(path)
+    assert card.simulated_cycle_time_seconds == 4.0
+    assert card.total_agent_duration_seconds == 2.5
+    assert card.total_duration_seconds == pytest.approx(6.5)
+
+
+def test_evaluate_total_duration_equals_simulated_alone_with_no_agentic_call():
+    """A config with zero agentic calls (e.g. G0) must not show total_duration_
+    seconds as None or 0 -- it's exactly the simulated time, confirmed, not
+    missing."""
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="ACTIVITY_COMPLETE", bpmn_element_id="T1", payload={"duration": 4.0})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End", payload={})
+    sink.close()
+
+    card = evaluate(path)
+    assert card.total_agent_duration_seconds is None
+    assert card.total_duration_seconds == pytest.approx(4.0)
+
+
+def test_evaluate_total_duration_is_none_without_any_completed_activity():
+    path = tempfile.mktemp()
+    sink = simpn_trace.TraceSink(path)
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_START", bpmn_element_id="Start", payload={})
+    simpn_trace.emit(sink, run_id="r", case_id="r", source="simpn", event_type="CASE_COMPLETE", bpmn_element_id="End", payload={})
+    sink.close()
+
+    card = evaluate(path)
+    assert card.simulated_cycle_time_seconds is None
+    assert card.total_duration_seconds is None
+
+
 def _cost_trace() -> str:
     """One task (priced), one gateway (unpriced — no hourly_rate for it below),
     one agentic task completion with tokens — enough to exercise simulated_cost's

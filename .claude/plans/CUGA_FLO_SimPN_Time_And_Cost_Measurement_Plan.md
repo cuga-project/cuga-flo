@@ -7,7 +7,14 @@
 > sampler verified to produce genuinely varying `simulated_cycle_time_seconds`
 > across repetitions; `--csv`/`--report` both carry the new columns
 > automatically. `applications/loan_approval_simpn/config/simpn_parameters.yaml`
-> now carries illustrative `hourly_rate`/`model_token_cost` values.
+> now carries illustrative `hourly_rate`/`model_token_cost` values. Follow-up
+> fix: `Scorecard.total_duration_seconds` (`simulated_cycle_time_seconds +
+> total_agent_duration_seconds`, mirroring `total_cost`) was added after
+> `--report`'s time matrix was found live to read almost identically across
+> G0-G3 — `simulated_cycle_time_seconds` alone is deliberately constant
+> regardless of config, so it can't show what autonomy costs in time by
+> itself; `total_duration_seconds` is now the figure every comparison
+> table/matrix actually prints.
 
 # Time and Cost Measurement for Simulation Experiments
 

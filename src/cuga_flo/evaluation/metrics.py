@@ -32,6 +32,7 @@ class Scorecard:
     cycle_time_seconds: float | None
     simulated_cycle_time_seconds: float | None
     total_agent_duration_seconds: float | None
+    total_duration_seconds: float | None
     activity_count: int
     agent_task_invocations: int
     agent_gateway_invocations: int
@@ -55,6 +56,23 @@ class Scorecard:
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
+
+
+def _total_duration_seconds(run: TraceRun) -> float | None:
+    """simulated_cycle_time_seconds + total_agent_duration_seconds — mirrors
+    total_cost's simulated_cost + agentic_cost. simulated_cycle_time_seconds
+    alone is the *modeled* BPS duration, deliberately the same regardless of
+    which config executes a task/gateway (it's a property of the activity,
+    not of who performs it), so it can't by itself show what autonomy costs
+    in time — total_agent_duration_seconds is the real wall-clock overhead a
+    config's agentic calls add *on top of* that modeled baseline. A config
+    with no agentic calls at all (e.g. G0) contributes a confirmed `0.0`
+    here, same reasoning as _agentic_cost. None only if there's no completed
+    activity to sum at all (simulated_cycle_time_seconds itself is None)."""
+    simulated = run.simulated_cycle_time_seconds()
+    if simulated is None:
+        return None
+    return simulated + (run.total_agent_duration_seconds() or 0.0)
 
 
 def _policy_compliance(run: TraceRun) -> bool | None:
@@ -138,6 +156,7 @@ def evaluate(
         cycle_time_seconds=run.cycle_time_seconds(),
         simulated_cycle_time_seconds=run.simulated_cycle_time_seconds(),
         total_agent_duration_seconds=run.total_agent_duration_seconds(),
+        total_duration_seconds=_total_duration_seconds(run),
         activity_count=len(run.execution_path()),
         agent_task_invocations=run.agent_task_count(),
         agent_gateway_invocations=run.agent_gateway_count(),

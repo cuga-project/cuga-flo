@@ -136,6 +136,7 @@ def _card(goal_achieved=None, decision_utility=None, intervention_f1=None, cycle
         cycle_time_seconds=cycle_time_seconds,
         simulated_cycle_time_seconds=None,
         total_agent_duration_seconds=None,
+        total_duration_seconds=None,
         activity_count=1,
         agent_task_invocations=0,
         agent_gateway_invocations=0,
