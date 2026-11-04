@@ -57,6 +57,8 @@ class MCPFlowBridge:
         # must not be dragged into it either.
         self._simpn_proxy: "SimPNProxy | None" = None
         self._http_started = False
+        self._server = None  # uvicorn.Server, once _ensure_http_server starts one
+        self._server_task: "asyncio.Task | None" = None
         logger.debug(f"MCPFlowBridge created: {name!r}")
 
     # ──────────────────────────────────────────────────────────────
@@ -212,10 +214,30 @@ class MCPFlowBridge:
                 log_level="warning",
             )
         )
-        asyncio.create_task(server.serve())
+        self._server = server
+        self._server_task = asyncio.create_task(server.serve())
         while not server.started:
             await asyncio.sleep(0.05)
         logger.info(f"MCPFlowBridge: MCP HTTP server listening on port {callback_port}")
+
+    async def shutdown(self) -> None:
+        """Gracefully stop the lazily-started MCP HTTP listener, if one was
+        ever started (no-op otherwise, e.g. G0/G1 runs that never call back
+        over HTTP). Found live: leaving the background `server.serve()` task
+        for `asyncio.run()` to cancel at interpreter shutdown is usually
+        harmless (its own cleanup swallows the CancelledError) but not always
+        -- a run-scenario repetition was once seen to fully complete (its
+        trace ends with a real CASE_COMPLETE) and still exit non-zero,
+        because that cancellation raced with uvicorn's own lifespan teardown.
+        Setting `should_exit` lets uvicorn shut itself down on its own terms
+        instead of being cancelled mid-await."""
+        if self._server is None or self._server_task is None:
+            return
+        self._server.should_exit = True
+        try:
+            await asyncio.wait_for(self._server_task, timeout=5.0)
+        except (TimeoutError, asyncio.CancelledError):
+            self._server_task.cancel()
 
     def register_kogito_engine(
         self,

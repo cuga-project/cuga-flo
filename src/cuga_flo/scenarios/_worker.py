@@ -24,7 +24,14 @@ async def _go(config_path: str, run_inputs: dict) -> None:
     from cuga_flo.engine.flow_config import FlowConfig
 
     flow_agent = FlowConfig.from_yaml(config_path).to_flow_agent()
-    await flow_agent.invoke(input_data=run_inputs)
+    try:
+        await flow_agent.invoke(input_data=run_inputs)
+    finally:
+        # Found live: an un-shut-down MCP HTTP listener's background task
+        # being cancelled by asyncio.run()'s own cleanup can intermittently
+        # make this whole subprocess exit non-zero even after a fully
+        # successful run -- see MCPFlowBridge.shutdown's docstring.
+        await flow_agent.bridge.shutdown()
 
 
 def main(argv: list[str]) -> int:
