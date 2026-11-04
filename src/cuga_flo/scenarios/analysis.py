@@ -280,9 +280,11 @@ _GLOSSARY: dict[str, str] = {
         "(e.g. `G1 -> G2`), isolating that specific autonomy layer's "
         "incremental contribution."
     ),
-    "Scores Matrix cell": (
-        "The same Goal Achievement Rate as GAR above, shown as a rounded "
-        "percentage, one per (scenario, config) pair."
+    "Scores Matrices": (
+        "Three Scenario × Configuration tables — Goal Achievement Rate (same "
+        "as GAR above, as a rounded percentage), mean cycle time (same as "
+        "mean_cycle_s above, real wall-clock seconds), and mean total cost "
+        "(same as mean_cost above) — one cell per (scenario, config) pair."
     ),
 }
 
@@ -298,9 +300,10 @@ def write_report(
     """A markdown summary of one run-scenario invocation (single scenario or
     folder mode): which scenarios/configs/repetitions were run, each scenario's
     comparison/aggregate/ablation (same numbers runner.format_comparison/
-    format_aggregates/format_ablation print, as markdown tables here), a
-    Scenario x Configuration Goal Achievement Rate matrix — the same shape as
-    the executive deck's "Scenario Type" x G0-G3 scorecard
+    format_aggregates/format_ablation print, as markdown tables here), three
+    Scenario x Configuration matrices (Goal Achievement Rate, mean cycle time,
+    mean total cost) — the GAR one is the same shape as the executive deck's
+    "Scenario Type" x G0-G3 scorecard
     (CUGA_FLO_Prosimos_Executive_Integration_extended.pptx, slide 23), except
     with real scenario ids and real measured results instead of an illustrative
     hypothetical pattern — and a closing "Footnotes" glossary (_GLOSSARY)
@@ -376,20 +379,28 @@ def write_report(
         if not any_pair:
             lines.append("- (need at least two of G0-G3 with a known goal_achievement_rate)")
 
-    lines += [
-        "",
-        "## Scores Matrix — Goal Achievement Rate by Scenario × Configuration",
-        "",
-        "| Scenario | " + " | ".join(configs) + " |",
-        "|---|" + "---|" * len(configs),
+    aggs_by_scenario = {s.scenario_id: {a.config: a for a in aggregate(multi_results[s.scenario_id])} for s in scenarios}
+    matrices = [
+        ("Goal Achievement Rate", lambda a: _pct(a.goal_achievement_rate)),
+        ("Mean Cycle Time (s)", lambda a: _fmt(a.mean_cycle_time_seconds)),
+        ("Mean Total Cost ($)", lambda a: _fmt(a.mean_total_cost)),
     ]
-    for s in scenarios:
-        aggs_by_config = {a.config: a for a in aggregate(multi_results[s.scenario_id])}
-        row = [s.scenario_id]
-        for config in configs:
-            agg = aggs_by_config.get(config)
-            row.append(_pct(agg.goal_achievement_rate) if agg else "N/A")
-        lines.append("| " + " | ".join(row) + " |")
+    lines += ["", "## Scores Matrices — by Scenario × Configuration"]
+    for title, cell in matrices:
+        lines += [
+            "",
+            f"### {title}",
+            "",
+            "| Scenario | " + " | ".join(configs) + " |",
+            "|---|" + "---|" * len(configs),
+        ]
+        for s in scenarios:
+            aggs_by_config = aggs_by_scenario[s.scenario_id]
+            row = [s.scenario_id]
+            for config in configs:
+                agg = aggs_by_config.get(config)
+                row.append(cell(agg) if agg else "N/A")
+            lines.append("| " + " | ".join(row) + " |")
 
     lines += ["", "## Footnotes — What Each Measurement Means", ""]
     for term, definition in _GLOSSARY.items():

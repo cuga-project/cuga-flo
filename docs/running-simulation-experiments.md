@@ -357,9 +357,9 @@ form above is unchanged and still the right tool when you only want one.
 `--report PATH` writes a single markdown file summarizing the whole
 invocation — which scenarios and configs were run, each scenario's
 comparison/aggregate/ablation (as proper markdown tables, not the terminal's
-plain-text ones), and a **Scenario × Configuration Goal Achievement Rate
-matrix**, one row per scenario and one column per config tested, each cell
-the GAR for that pair:
+plain-text ones), and three **Scenario × Configuration matrices** — Goal
+Achievement Rate, mean cycle time, and mean total cost — each one row per
+scenario and one column per config tested:
 
 ```bash
 cuga-flo run-scenario loan_approval_simpn \
@@ -585,11 +585,13 @@ confidence interval, a plot across more scenarios, or
 everything above — no terminal, no CSV, no pandas needed to see the shape of
 a result. It opens with which scenarios and configs were actually run, then
 every scenario's comparison/aggregate/ablation as proper markdown tables, and
-closes with the Scenario × Configuration GAR matrix: scan down a column to
-see one config's performance across every scenario, or across a row to see
-how one scenario's outcome shifts as autonomy increases — exactly the
+closes with three Scenario × Configuration matrices — GAR, mean cycle time,
+mean total cost: scan down a column to
+see one config's performance (and its time/cost) across every scenario, or
+across a row to see how one scenario's outcome, latency, and spend all shift
+as autonomy increases — exactly the
 executive-summary question the Prosimos deck's own matrix slide posed
-hypothetically, now answered from real runs.
+hypothetically, now answered from real runs, with time and cost alongside it.
 
 ### What's still out of scope for review
 
