@@ -519,18 +519,18 @@ and ablation views are computed from that same real data (shown together here, a
 `run-scenario` now prints all three in one pass):
 
 ```
-config rep  goal   util   interv_f1  cycle_s
+config rep  goal   util   interv_f1  sim_s
 -----------------------------------------------
-G0     0    False  1.0    0.0        0.0
-G1     0    False  1.0    0.0        20.0
-G2     0    False  1.0    0.0        12.1
-G3     0    True   1.0    1.0        17.5
+G0     0    False  1.0    0.0        4.0
+G1     0    False  1.0    0.0        4.0
+G2     0    False  1.0    0.0        4.0
+G3     0    True   1.0    1.0        4.0
 
-config n    GAR    mean_util  mean_interv_f1  mean_cycle_s
-G0     1    0.00   1.00       0.00            0.00
-G1     1    0.00   1.00       0.00            20.00
-G2     1    0.00   1.00       0.00            12.10
-G3     1    1.00   1.00       1.00            17.50
+config n    GAR    mean_util  mean_interv_f1  mean_sim_s   mean_cost  mean_agent_s
+G0     1    0.00   1.00       0.00            4.00         0.04       -
+G1     1    0.00   1.00       0.00            4.00         0.05       7.84
+G2     1    0.00   1.00       0.00            4.00         0.07       3.27
+G3     1    1.00   1.00       1.00            4.00         0.09       7.33
 
 Ablation (ΔGAR — Goal Achievement Rate):
   G0 -> G1: +0.00
@@ -538,6 +538,15 @@ Ablation (ΔGAR — Goal Achievement Rate):
   G2 -> G3: +1.00
   G0 -> G3: +1.00
 ```
+
+`sim_s`/`mean_sim_s` is the BPS-simulated process time, not wall-clock —
+constant here across G0-G3 because every config takes the same path through
+the same task durations in `simpn_parameters.yaml` (see §6's "Two different
+cycle times" note for why wall-clock would instead jump around: G0 near-zero,
+G1-G3 reflecting real, variable LLM latency). `mean_cost`/`mean_agent_s`
+(illustrative `hourly_rate`/`model_token_cost` figures) climb step by step as
+each layer of autonomy adds its own agentic calls on top of the same native
+cost floor.
 
 Reading it: **all three of G0/G1/G2 fail identically, and for the same reason.**
 G0's `check credit` task now runs a real (if crude) native formula — see §2's note

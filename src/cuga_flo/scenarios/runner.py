@@ -271,13 +271,19 @@ def run_matrix(
 
 
 def format_comparison(scenario: Scenario, results: dict[str, list[Scorecard]]) -> str:
+    """`sim_s` is simulated_cycle_time_seconds (the sum of each executed task/
+    gateway's configured duration), not wall-clock cycle_time_seconds — the
+    latter reads near-zero for any config making no agentic call at all (e.g.
+    G0), which would make this comparison table misleading across G0-G3 for
+    exactly the reason analysis.py's Scores Matrices switched to the same
+    field."""
     lines = [f"Scenario {scenario.scenario_id}: {scenario.description.strip()}", ""]
-    header = f"{'config':<6} {'rep':<4} {'goal':<6} {'util':<6} {'interv_f1':<10} {'cycle_s':<10}"
+    header = f"{'config':<6} {'rep':<4} {'goal':<6} {'util':<6} {'interv_f1':<10} {'sim_s':<10}"
     lines.append(header)
     lines.append("-" * len(header))
     for config, cards in results.items():
         for i, card in enumerate(cards):
-            cycle = f"{card.cycle_time_seconds:.1f}" if card.cycle_time_seconds is not None else "-"
+            cycle = f"{card.simulated_cycle_time_seconds:.1f}" if card.simulated_cycle_time_seconds is not None else "-"
             lines.append(
                 f"{config:<6} {i:<4} {str(card.goal_achieved):<6} {str(card.decision_utility):<6} "
                 f"{str(card.intervention_f1):<10} {cycle:<10}"

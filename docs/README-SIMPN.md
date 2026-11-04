@@ -354,8 +354,11 @@ the next — unattended N-repetitions-x-4-configs is the point, so this does not
 follow the manual three-terminal workflow `CLAUDE.md` documents for a single
 interactive run. Prints a progress line per `(config, scenario, repetition)`
 as it runs (`[G1] building and starting the SimPN service...`, then
-`[3/12] S04 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)`), then a
-`goal`/`util`/`interv_f1`/`cycle_s` comparison table across configs.
+`[3/12] S04 / G1 / rep 1 of 3 ... done (goal=False, 20.1s)`, real wall-clock
+time — a progress heartbeat, not an analysis metric), then a
+`goal`/`util`/`interv_f1`/`sim_s` comparison table across configs (`sim_s` is
+the BPS-simulated process time, not wall-clock — see "Deterministic
+evaluator" above for why wall-clock alone would be misleading across G0-G3).
 `loan_approval_simpn/scenarios/S04-regulatory-restriction.yaml`,
 `S05-slow-credit-check.yaml`, and `S02-unverifiable-id.yaml` all differentiate
 G-levels via **oversight** autonomy, through a different hook rule each (see
